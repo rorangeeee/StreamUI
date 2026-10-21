@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#030305" />
+    <meta name="description" content="StreamUI 实时系统音频声谱图与波形组件" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>StreamUI — Audio</title>
+  </head>
+  <body>
+    <main id="workspace" tabindex="-1" aria-label="音频可视化工作区">
+      <section class="scope-window" id="spectrogram-window" tabindex="0" aria-label="声谱图窗口">
+        <audio-scope mode="spectrogram" aria-label="实时声谱图"></audio-scope>
+      </section>
+      <section class="scope-window" id="waveform-window" tabindex="0" aria-label="波形窗口">
+        <audio-scope mode="waveform" aria-label="实时波形"></audio-scope>
+      </section>
+    </main>
+    <div id="layer-menu" class="layer-menu" role="menu" aria-label="调整窗口层级" hidden>
+      <button type="button" role="menuitem" data-layer="front">置于顶层</button>
+      <button type="button" role="menuitem" data-layer="up">上移一层</button>
+      <span class="menu-separator" aria-hidden="true"></span>
+      <button type="button" role="menuitem" data-layer="down">下移一层</button>
+      <button type="button" role="menuitem" data-layer="back">置于底层</button>
+      <span class="menu-separator" aria-hidden="true"></span>
+      <button type="button" role="menuitemcheckbox" data-action="invert" aria-checked="false">反色</button>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

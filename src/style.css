@@ -1,0 +1,44 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color-scheme: dark;
+  color: #5e6ad2;
+  background: #000;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body { min-width: 240px; }
+#workspace { position: fixed; inset: 0; overflow: hidden; outline: none; }
+
+.scope-window {
+  --scope-background: #000;
+  --scope-foreground: #5e6ad2;
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  padding: 8px;
+  border: 1px solid var(--scope-foreground);
+  background: var(--scope-background);
+  user-select: none;
+  touch-action: none;
+  outline: none;
+  transform-origin: center;
+}
+
+.scope-window[data-inverted="true"] { --scope-background: #5e6ad2; --scope-foreground: #000; }
+.scope-window:focus-visible { outline: 1px solid var(--scope-foreground); outline-offset: 3px; }
+audio-scope { display: block; flex: 1; min-width: 0; min-height: 0; overflow: hidden; cursor: grab; }
+.is-interacting audio-scope { cursor: grabbing; }
+.is-rotating audio-scope { cursor: ew-resize; }
+audio-scope canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
+
+.layer-menu { position: fixed; z-index: 10001; width: 116px; padding: 4px; border: 1px solid #5e6ad2; background: #000; }
+.layer-menu[hidden] { display: none; }
+.layer-menu button { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 8px 12px; border: 0; background: transparent; color: #5e6ad2; font: 12px system-ui, sans-serif; text-align: left; cursor: pointer; }
+.layer-menu button:hover, .layer-menu button:focus-visible { background: #5e6ad226; outline: none; }
+.layer-menu button[role="menuitemcheckbox"]::after { content: ''; width: 9px; height: 9px; border: 1px solid currentColor; }
+.layer-menu button[aria-checked="true"]::after { background: currentColor; }
+.layer-menu button:disabled { opacity: .25; cursor: default; background: transparent; }
+.menu-separator { display: block; height: 1px; margin: 3px 8px; background: #5e6ad240; }
