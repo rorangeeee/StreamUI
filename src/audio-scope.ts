@@ -49,7 +49,7 @@ export class AudioScope extends HTMLElement {
   }
 
   private get foreground(): string {
-    return this.hasAttribute('inverted') ? '#000' : '#5e6ad2';
+    return getComputedStyle(this).getPropertyValue('--scope-foreground').trim() || '#40009e';
   }
 
   /** A new capture starts a new time history. Stopping retains the last spectrogram. */

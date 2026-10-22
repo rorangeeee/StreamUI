@@ -2,6 +2,7 @@ import './style.css';
 import { SystemAudio } from './audio.ts';
 import type { AudioState } from './audio.ts';
 import { AudioScope } from './audio-scope.ts';
+import './chat-terminal.ts';
 import { WindowManager } from './windows.ts';
 
 const audio = new SystemAudio();
@@ -26,7 +27,7 @@ function syncState(): void {
   previousTime = 0;
   document.body.dataset.audioState = audio.state;
   workspace.setAttribute('aria-busy', String(audio.state === 'requesting'));
-  workspace.setAttribute('aria-label', audio.error ?? '音频可视化工作区');
+  workspace.setAttribute('aria-label', audio.error ?? '音频可视化与弹幕工作区');
   if (audio.state === 'live' && previousState !== 'live') scopes.forEach((scope) => scope.clear());
   previousState = audio.state;
   if (audio.state === 'live' && !document.hidden) animation = requestAnimationFrame(draw);

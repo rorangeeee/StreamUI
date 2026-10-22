@@ -3,18 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#030305" />
-    <meta name="description" content="StreamUI 实时系统音频声谱图与波形组件" />
+    <meta name="theme-color" content="#40009e" />
+    <meta name="description" content="StreamUI 实时音频可视化与终端弹幕机" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>StreamUI — Audio</title>
+    <title>StreamUI</title>
   </head>
   <body>
-    <main id="workspace" tabindex="-1" aria-label="音频可视化工作区">
+    <main id="workspace" tabindex="-1" aria-label="音频可视化与弹幕工作区">
       <section class="scope-window" id="spectrogram-window" tabindex="0" aria-label="声谱图窗口">
         <audio-scope mode="spectrogram" aria-label="实时声谱图"></audio-scope>
       </section>
       <section class="scope-window" id="waveform-window" tabindex="0" aria-label="波形窗口">
         <audio-scope mode="waveform" aria-label="实时波形"></audio-scope>
+      </section>
+      <section class="scope-window chat-window" id="chat-window" tabindex="0" aria-label="弹幕窗口">
+        <chat-terminal aria-label="弹幕终端"></chat-terminal>
       </section>
     </main>
     <div id="layer-menu" class="layer-menu" role="menu" aria-label="调整窗口层级" hidden>
