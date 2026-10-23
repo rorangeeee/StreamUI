@@ -19,6 +19,12 @@
       <section class="scope-window chat-window" id="chat-window" tabindex="0" aria-label="弹幕窗口">
         <chat-terminal aria-label="弹幕终端"></chat-terminal>
       </section>
+      <section class="scope-window wordmark-window" id="wordmark-window" tabindex="0" aria-label="拉伸文字窗口">
+        <kinetic-wordmark></kinetic-wordmark>
+      </section>
+      <section class="scope-window wordmark-window" id="wordmark-blur-window" tabindex="0" aria-label="横向模糊文字窗口">
+        <kinetic-wordmark effect="blur"></kinetic-wordmark>
+      </section>
     </main>
     <div id="layer-menu" class="layer-menu" role="menu" aria-label="调整窗口层级" hidden>
       <button type="button" role="menuitem" data-layer="front">置于顶层</button>

@@ -3,6 +3,7 @@ import { SystemAudio } from './audio.ts';
 import type { AudioState } from './audio.ts';
 import { AudioScope } from './audio-scope.ts';
 import './chat-terminal.ts';
+import './kinetic-wordmark.ts';
 import { WindowManager } from './windows.ts';
 
 const audio = new SystemAudio();

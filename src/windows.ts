@@ -144,22 +144,30 @@ export class WindowManager {
     this.defaultLayout = true;
     this.order = [...this.panels];
     this.closeMenu();
-    const [spectrogram, waveform, chat] = this.panels;
+    const [spectrogram, waveform, chat, wordmark, blurWordmark] = this.panels;
     if (width <= 760) {
-      const panelHeight = Math.min(220, Math.max(120, (height - 64) * .24));
-      this.rects.set(spectrogram, { x: 16, y: 16, width: width - 32, height: panelHeight, angle: 0, inverted: false });
-      this.rects.set(waveform, { x: 16, y: 32 + panelHeight, width: width - 32, height: panelHeight, angle: 0, inverted: false });
-      this.rects.set(chat, { x: 16, y: 48 + panelHeight * 2, width: width - 32, height: height - 64 - panelHeight * 2, angle: 0, inverted: false });
+      const titleHeight = 120;
+      const panelHeight = Math.min(180, Math.max(120, (height - titleHeight * 2 - 80) / 3));
+      this.rects.set(wordmark, { x: 16, y: 16, width: width - 32, height: titleHeight, angle: 0, inverted: false });
+      this.rects.set(blurWordmark, { x: 16, y: 28 + titleHeight, width: width - 32, height: titleHeight, angle: 0, inverted: false });
+      this.rects.set(spectrogram, { x: 16, y: 40 + titleHeight * 2, width: width - 32, height: panelHeight, angle: 0, inverted: false });
+      this.rects.set(waveform, { x: 16, y: 52 + titleHeight * 2 + panelHeight, width: width - 32, height: panelHeight, angle: 0, inverted: false });
+      this.rects.set(chat, { x: 16, y: 64 + titleHeight * 2 + panelHeight * 2, width: width - 32, height: height - 80 - titleHeight * 2 - panelHeight * 2, angle: 0, inverted: false });
     } else {
       const margin = clamp(width * .045, 24, 64);
       const gap = clamp(width * .035, 20, 44);
       const chatWidth = Math.max(270, width * .31);
       const leftWidth = width - margin * 2 - gap - chatWidth;
-      const top = height * .12;
-      const panelHeight = Math.min(340, height * .35);
-      this.rects.set(spectrogram, { x: margin, y: top, width: leftWidth, height: panelHeight, angle: 0, inverted: false });
-      this.rects.set(waveform, { x: margin + leftWidth * .12, y: top + panelHeight + height * .07, width: leftWidth * .87, height: Math.min(290, height * .27), angle: 0, inverted: false });
-      this.rects.set(chat, { x: width - margin - chatWidth, y: top, width: chatWidth, height: height * .76, angle: 0, inverted: false });
+      const top = height * .08;
+      const titleHeight = clamp(height * .16, 120, 170);
+      const verticalGap = clamp(height * .035, 16, 36);
+      const panelHeight = Math.min(260, height * .22);
+      const spectrumTop = top + (titleHeight + verticalGap) * 2;
+      this.rects.set(wordmark, { x: margin, y: top, width: leftWidth, height: titleHeight, angle: 0, inverted: false });
+      this.rects.set(blurWordmark, { x: margin, y: top + titleHeight + verticalGap, width: leftWidth, height: titleHeight, angle: 0, inverted: false });
+      this.rects.set(spectrogram, { x: margin, y: spectrumTop, width: leftWidth, height: panelHeight, angle: 0, inverted: false });
+      this.rects.set(waveform, { x: margin + leftWidth * .12, y: spectrumTop + panelHeight + verticalGap, width: leftWidth * .87, height: Math.min(220, height * .17), angle: 0, inverted: false });
+      this.rects.set(chat, { x: width - margin - chatWidth, y: top, width: chatWidth, height: height * .80, angle: 0, inverted: false });
     }
     this.panels.forEach((panel) => this.fit(panel));
     this.applyLayers();
@@ -181,7 +189,7 @@ export class WindowManager {
     const rect = this.rects.get(panel)!;
     Object.assign(panel.style, { width: `${rect.width}px`, height: `${rect.height}px`, transform: `translate(${rect.x}px, ${rect.y}px) rotate(${rect.angle}deg)` });
     panel.dataset.inverted = String(rect.inverted);
-    panel.querySelector('audio-scope')?.toggleAttribute('inverted', rect.inverted);
+    panel.querySelector('audio-scope, kinetic-wordmark')?.toggleAttribute('inverted', rect.inverted);
   }
 
   private fit(panel: HTMLElement): void {
@@ -269,30 +277,26 @@ export class WindowManager {
   private restore(): void {
     try {
       const layout: SavedLayout = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
-      if (!layout || !Array.isArray(layout.order) || new Set(layout.order).size !== layout.order.length) return;
+      if (!layout || !Array.isArray(layout.order) || layout.order.length !== this.panels.length || new Set(layout.order).size !== this.panels.length) return;
       const restoredOrder = layout.order.map((id) => this.panels.find((panel) => panel.id === id));
       if (restoredOrder.some((panel) => !panel)) return;
-      const legacy = layout.order.length === 2 && !layout.order.includes('chat-window');
-      if ((!legacy && layout.order.length !== this.panels.length) || (legacy && this.workspace.clientWidth <= 760)) return;
       const nextRects = new Map(this.rects);
-      const leftArea = this.rects.get(this.panels[0])!;
       for (const panel of restoredOrder as HTMLElement[]) {
         const rect = layout.windows?.[panel.id];
         if (!rect || ![rect.x, rect.y, rect.width, rect.height, rect.angle].every(Number.isFinite) || typeof rect.inverted !== 'boolean' || rect.width <= 0 || rect.height <= 0) return;
         nextRects.set(panel, {
-          x: legacy ? leftArea.x + rect.x * leftArea.width : rect.x * this.workspace.clientWidth,
+          x: rect.x * this.workspace.clientWidth,
           y: rect.y * this.workspace.clientHeight,
-          width: rect.width * (legacy ? leftArea.width : this.workspace.clientWidth),
+          width: rect.width * this.workspace.clientWidth,
           height: rect.height * this.workspace.clientHeight,
           angle: normalizeAngle(rect.angle), inverted: rect.inverted,
         });
       }
       this.rects = nextRects;
-      this.order = legacy ? [...restoredOrder as HTMLElement[], this.panels[2]] : restoredOrder as HTMLElement[];
+      this.order = restoredOrder as HTMLElement[];
       this.defaultLayout = false;
       this.panels.forEach((panel) => this.fit(panel));
       this.applyLayers();
-      if (legacy) this.save();
     } catch { /* A corrupt or unavailable saved layout must not prevent startup. */ }
   }
 }

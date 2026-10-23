@@ -1,4 +1,12 @@
 @font-face {
+  font-family: 'StreamUI Retro Pixel';
+  src: local('Retro Pixel'), local('RetroPixel');
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+
+@font-face {
   font-family: 'StreamUI PingFang Thin';
   /* This Windows installation names Apple's Thin face "PingFang SC Light". */
   src: local('PingFangSC-Thin'), local('.PingFang-SC-Thin'), local('.PingFang SC Thin'), local('PingFang SC Light'), local('苹方 细体');
@@ -43,6 +51,14 @@ audio-scope { display: block; flex: 1; min-width: 0; min-height: 0; overflow: hi
 .is-interacting audio-scope { cursor: grabbing; }
 .is-rotating audio-scope { cursor: ew-resize; }
 audio-scope canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
+
+.wordmark-window { padding: 0; border: 0; background: transparent; overflow: visible; }
+.wordmark-window:focus-visible { outline-color: var(--accent); }
+kinetic-wordmark { display: block; flex: 1; min-width: 0; min-height: 0; overflow: visible; cursor: grab; }
+kinetic-wordmark svg { display: block; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+kinetic-wordmark text { font-family: 'StreamUI Retro Pixel'; font-weight: 400; pointer-events: visiblePainted; }
+.is-interacting kinetic-wordmark { cursor: grabbing; }
+.is-rotating kinetic-wordmark { cursor: ew-resize; }
 
 .layer-menu { position: fixed; z-index: 10001; width: 116px; padding: 4px; border: 1px solid var(--accent); background: #000; }
 .layer-menu[hidden] { display: none; }
