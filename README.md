@@ -1,6 +1,6 @@
 # StreamUI
 
-**0.1 / Windows x64** · [下载正式版 EXE](https://github.com/rorangeeee/StreamUI/releases/download/v0.1.0/StreamUI%20Host.exe) · [Release 与更新说明](https://github.com/rorangeeee/StreamUI/releases/tag/v0.1.0)
+**0.1 / Windows x64** · [下载正式版 EXE](https://github.com/rorangeeee/StreamUI/releases/download/v0.1.0/StreamUI.Host.exe) · [Release 与更新说明](https://github.com/rorangeeee/StreamUI/releases/tag/v0.1.0)
 
 本地直播视觉组件，按 `STREAMUI_v2_21-9.svg` 重构为 3840 × 2160 的 4K 直播版式。顶部左侧为紫底荧光绿的中英文标题与装饰，中部为黑底紫色循环品牌文字，信息终端位于品牌区右侧、字标下层；右上为单条弹幕与礼物展示。中间是全宽超宽透明主画面，底部左侧为声谱图，右侧为默认反色的示波器，页脚仅两条紫色跑马灯。输出与配置页的紫色统一为 TOYO82 `#40009E`，荧光黄绿统一为其严格 RGB 反色 `#BFFF61`；标题切换高光保留纯黑。六个区域的位置、尺寸、旋转、反色和层级由 Host 统一应用。
 
@@ -10,7 +10,7 @@
 
 ### 1. 准备 Host 与字体
 
-1. 从 Release 下载 `StreamUI Host.exe`，放到固定目录，手动双击启动。它是自包含单文件程序，网页资源与 .NET 运行时均已内置，使用发布版无需安装 Node.js、编译源码或另外安装 .NET。
+1. 从 Release 下载 `StreamUI.Host.exe`，放到固定目录，手动双击启动。GitHub 会把附件名里的空格规范化为点；本地正式包及下文命令示例使用 `StreamUI Host.exe`，下载后可另存为该名称，内容相同。它是自包含单文件程序，网页资源与 .NET 运行时均已内置，使用发布版无需安装 Node.js、编译源码或另外安装 .NET。
 2. 配置页通常会自动打开，也可以访问 [http://127.0.0.1:5181/](http://127.0.0.1:5181/)。Host 驻留 Windows 系统托盘，可从托盘菜单打开配置页或退出。
 3. 在「配置」中保留画布 `3840 × 2160`，设置中英文标题，并选择实际播放声音的 Windows 输出设备。保存后，在「预览」检查标题、频谱和波形。
 4. 字体不包含在 EXE 中，需要自行在 Windows 中安装。标题、品牌与暂离条带主要使用 **Retro Pixel** 和 **405 SS 像素体**；页脚使用 **Blue Screen Personal Use**；弹幕使用 **JetBrains Mono** 与 **苹方 Thin**。装饰还使用 SF Pro、Technotot、Dot Matrix。字体缺失时会回退，外观会有差异。
