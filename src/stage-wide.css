@@ -10,6 +10,8 @@
 #workspace[data-layout-mode="16:9"] stream-metadata { display: none; }
 
 #workspace[data-layout-mode="16:9"] .title-window { background: transparent; overflow: visible; }
+/* Use the 21:9 title's fitting width; longer text can extend over the transparent video. */
+#workspace[data-layout-mode="16:9"] #bilingual-title { --title-reference-width: 2265.558; }
 #workspace[data-layout-mode="16:9"] .brand-window { background: var(--accent); overflow: hidden; }
 #workspace[data-layout-mode="16:9"] .brand-window[data-inverted="true"] { background: var(--accent-inverse); }
 #workspace[data-layout-mode="16:9"] .brand-window .themebar-decorations {

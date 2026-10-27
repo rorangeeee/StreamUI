@@ -85,7 +85,8 @@ try {
   const obsHtml = await fetch(obsUrl).then(r => r.text());
   const configHtml = await fetch(configUrl).then(r => r.text());
   check(obsHtml.includes('id="workspace"') && !obsHtml.includes('settings-form'), 'OBS port serves only the display');
-  check(configHtml.includes('settings-form') && configHtml.includes('tab-layout'), 'configuration port serves three tabs');
+  check(configHtml.includes('settings-form') && configHtml.includes('tab-preview') && configHtml.includes('tab-settings')
+    && !configHtml.includes('tab-layout') && !configHtml.includes('reset-layout'), 'configuration port serves preview and settings without a layout editor');
   check((await fetch(new URL('/api/settings', obsUrl))).status === 404, 'OBS cannot read secret configuration');
   check((await fetch(new URL('/api/settings', configUrl), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(original) })).status === 403, 'mutations require the application header');
   check((await fetch(new URL('/api/state', obsUrl), { headers: { Origin: 'https://example.com' } })).status === 403, 'foreign origins cannot access host data');

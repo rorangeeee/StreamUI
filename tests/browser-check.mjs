@@ -97,16 +97,20 @@ document.querySelector('#run').onclick = async () => {
     trackLabel.update(trackFixture); trackLabel.pause(); trackLabel.show(true);
     check(trackLabel.querySelector('.now-playing-content').textContent === 'NOW PLAYING:  夜行 LATENITE-When 歌手', '自动曲目按指定格式显示完整中英文名称');
     const enHeight = trackLabel.querySelector('[data-reference="en"]').getBBox().height;
-    const zhHeight = trackLabel.querySelector('[data-reference="zh"]').getBBox().height;
     const desiredHeight = parseFloat(style(trackLabel).height) / 218.615 * 42;
-    // SVG font metrics quantize fractional sizes to a subpixel grid.
-    check(close(enHeight, zhHeight, .3) && close(enHeight, desiredHeight, .6), '两种字体的实际字高相等且约为 42 px');
-    check(+trackLabel.querySelector('[data-reference="zh"]').getAttribute('font-size') < +trackLabel.querySelector('[data-reference="en"]').getAttribute('font-size'), '中文额外缩小字号以匹配英文像素字体');
+    const inkHeights = [...trackLabel.querySelectorAll('[data-reference]')].map(reference => {
+      const context = doc().createElement('canvas').getContext('2d');
+      context.font = `400 ${reference.getAttribute('font-size')}px ${style(reference).fontFamily}`;
+      const metrics = context.measureText(reference.textContent);
+      return metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+    });
+    check(close(enHeight, desiredHeight, .6), '英文保留约 42 px 的参考字高');
+    check(close(inkHeights[0], inkHeights[1], 1), '中文与英文按可见像素字形等高，不按含留白的 SVG 文本框对齐');
     const trackBounds = trackLabel.querySelector('.now-playing-content').getBoundingClientRect(), spectrumBounds = rect('#spectrogram-window');
     check(close(trackBounds.left + trackBounds.width / 2, spectrumBounds.left + spectrumBounds.width / 2, .2)
       && close(trackBounds.top + trackBounds.height / 2, spectrumBounds.top + spectrumBounds.height / 2, .2), '曲目文字在频谱图中水平与垂直居中', JSON.stringify({track: [trackBounds.left, trackBounds.top, trackBounds.width, trackBounds.height], panel: [spectrumBounds.left, spectrumBounds.top, spectrumBounds.width, spectrumBounds.height]}));
-    check(style(trackLabel).color === 'rgb(64, 0, 158)' && style(trackLabel).mixBlendMode === 'difference'
-      && style(doc().querySelector('#spectrogram-window')).isolation === 'isolate', '紫色差值混合只作用于频谱图');
+    check(style(trackLabel).color === 'rgb(64, 0, 158)' && style(trackLabel).mixBlendMode === 'normal'
+      && style(trackLabel).filter.includes('drop-shadow') && style(trackLabel).filter.includes('2px 2px 0px'), '紫色曲目直接覆盖频谱并使用微小黑色硬阴影');
     trackLabel.show(nowPlayingLit(800));
     check(style(trackLabel).visibility === 'hidden' && style(trackLabel).transitionDuration === '0s', '灭相位直接隐藏文字，不使用淡出');
     trackLabel.update({ ...trackFixture, playing: false, state: 'paused' });

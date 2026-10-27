@@ -3,10 +3,7 @@ import { fillObsSettings, obsSettingsFromForm } from './config-layout.ts';
 import { api, host } from './host-client.ts';
 import type { HostConfig, HostState } from './host-client.ts';
 import { HostAudio } from './audio.ts';
-import { parseLayout } from './layout.ts';
-import type { SavedLayout } from './layout.ts';
-import { isStageMode, PANEL_IDS, STAGE_WIDTH, STAGE_HEIGHT, STAGE_LAYOUT_VERSION } from './stage-layout.ts';
-import type { StageMode } from './stage-layout.ts';
+import { STAGE_WIDTH, STAGE_HEIGHT, STAGE_LAYOUT_VERSION } from './stage-layout.ts';
 
 interface Device { id: string; name: string; channels: number; sampleRate: number; isDefault: boolean }
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id)! as T;
@@ -18,8 +15,6 @@ let settings: HostConfig | null = null;
 let devices: Device[] = [];
 let currentTab = 'preview';
 let feedbackTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingLayout: { mode: StageMode; layout: SavedLayout } | null = null;
-let savingLayout = false;
 
 function feedback(message: string, error = false): void {
   const box = $('feedback');
@@ -37,11 +32,7 @@ function fitFrame(): void {
 function loadFrame(): void {
   if (!host.state || currentTab === 'settings') return;
   const url = new URL(host.state.obsUrl);
-  if (currentTab === 'layout') url.searchParams.set('edit', '1');
   if (iframe.src !== url.href) iframe.src = url.href;
-  iframe.dataset.mode = currentTab;
-  iframe.title = currentTab === 'layout' ? '拖动调整 OBS 布局' : 'OBS 实时画面预览';
-  iframe.tabIndex = currentTab === 'layout' ? 0 : -1;
   fitFrame();
 }
 function tab(name: string): void {
@@ -52,11 +43,6 @@ function tab(name: string): void {
   });
   $('panel-stage').hidden = name === 'settings';
   $('panel-settings').hidden = name !== 'settings';
-  $('panel-stage').setAttribute('aria-labelledby', `tab-${name === 'layout' ? 'layout' : 'preview'}`);
-  $('reset-layout').hidden = name !== 'layout'; $('layout-hint').hidden = name !== 'layout';
-  $('stage-title').textContent = name === 'layout' ? '调整直播布局' : '直播画面预览';
-  $('stage-eyebrow').textContent = name === 'layout' ? 'LAYOUT EDITOR' : 'LIVE OUTPUT';
-  $('stage-description').textContent = name === 'layout' ? '直接在画布中移动组件，修改会自动同步到 OBS。' : '与 OBS 浏览器源使用同一画面，音频和布局由 host 同步。';
   loadFrame();
 }
 document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(button => {
@@ -188,27 +174,6 @@ $('copy-url').onclick = async () => {
   try { await navigator.clipboard.writeText(host.state.obsUrl); feedback('OBS 浏览器源地址已复制'); }
   catch { feedback(`OBS 地址：${host.state.obsUrl}`); }
 };
-async function saveLayout(): Promise<void> {
-  if (savingLayout) return;
-  savingLayout = true;
-  while (pendingLayout) {
-    const layout = pendingLayout; pendingLayout = null;
-    $('layout-status').textContent = '正在保存…';
-    try { await api('/api/layout', 'PUT', layout); $('layout-status').textContent = '已保存 · OBS 已同步'; }
-    catch (error) { $('layout-status').textContent = '保存失败，请重新调整后重试'; feedback((error as Error).message, true); }
-  }
-  savingLayout = false;
-}
-window.addEventListener('message', event => {
-  if (!host.state || event.source !== iframe.contentWindow || event.origin !== new URL(host.state.obsUrl).origin || event.data?.type !== 'streamui:layout') return;
-  const layout = parseLayout(event.data.layout, PANEL_IDS);
-  if (!layout || !isStageMode(event.data.mode)) return;
-  pendingLayout = { mode: event.data.mode, layout }; void saveLayout();
-});
-$('reset-layout').onclick = () => {
-  if (host.state) iframe.contentWindow?.postMessage({ type: 'streamui:reset' }, new URL(host.state.obsUrl).origin);
-};
-
 function meter(): void {
   const frame = audio.read();
   let peak = 0;

@@ -45,6 +45,7 @@ stream-metadata[data-phase="hold"] .metadata-row:last-child .metadata-cursor { v
 .stream-window { background: transparent; }
 #spectrogram-window { isolation: isolate; }
 now-playing { position: absolute; inset: 0; z-index: 1; color: var(--accent); mix-blend-mode: difference; pointer-events: none; overflow: hidden; }
+#workspace[data-layout-mode="21:9"] now-playing { mix-blend-mode: normal; filter: drop-shadow(calc(2px * var(--ui-scale)) calc(2px * var(--ui-scale)) 0 #000); }
 now-playing svg { display: block; width: 100%; height: 100%; overflow: hidden; fill: currentColor; }
 now-playing text { font-weight: 400; white-space: pre; font-optical-sizing: none; }
 .stage-dividers { position: absolute; inset: 0; z-index: 20; width: 100%; height: 100%; overflow: hidden; pointer-events: none; color: var(--accent); fill: none; stroke: currentColor; stroke-width: var(--divider-width); stroke-linecap: butt; }

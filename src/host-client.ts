@@ -38,7 +38,9 @@ export class HostConnection extends EventTarget {
   private socket: WebSocket | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
   private active = false;
-  start(): void { this.active = true; this.connect(); }
+  private offline = false;
+  setOffline(offline: boolean): void { this.offline = offline; if (offline) this.stop(); }
+  start(): void { if (this.offline) return; this.active = true; this.connect(); }
   stop(): void {
     this.active = false;
     if (this.retry) clearTimeout(this.retry);

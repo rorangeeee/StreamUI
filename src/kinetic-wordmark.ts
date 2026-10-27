@@ -166,12 +166,17 @@ export class KineticWordmark extends HTMLElement {
     const titleWidth = this.clientWidth || 2265.558;
     const titleHeight = this.clientHeight || 220;
     const uiScale = parseFloat(style.getPropertyValue('--ui-scale')) || 1;
+    const titleReferenceWidth = (parseFloat(style.getPropertyValue('--title-reference-width')) || 0) * uiScale;
     const titleScale = Math.min(1, titleHeight / (276.2784 * uiScale),
-      Math.max(1, titleWidth - parseFloat(style.fontSize) * 2.8) / Math.max(1, ...measurements.map(item => item.width)));
+      Math.max(1, Math.max(titleWidth, titleReferenceWidth) - parseFloat(style.fontSize) * 2.8) / Math.max(1, ...measurements.map(item => item.width)));
+    // Keep the existing anchor for short titles; let long overlay titles expand
+    // to the right instead of clipping their left half outside the canvas.
+    const titleCenterX = Math.max(titleWidth / 2,
+      titleReferenceWidth ? Math.max(...measurements.map(item => item.width)) * titleScale / 2 + 16 * uiScale : 0);
     const titleBaseline = titleHeight / 2 + ((parseFloat(style.lineHeight) || 168.55 * uiScale) - 276.2784 * uiScale / 2) * titleScale;
     if (this.titleMode) {
       this.svg.setAttribute('viewBox', `0 0 ${titleWidth} ${titleHeight}`);
-      this.filterWidth = Math.max(2000, titleWidth + 1000); this.filterHeight = titleHeight;
+      this.filterWidth = Math.max(2000, Math.max(titleWidth, titleReferenceWidth) + 1000); this.filterHeight = titleHeight;
       this.filter?.setAttribute('width', String(this.filterWidth));
       this.filter?.setAttribute('height', String(this.filterHeight));
     }
@@ -179,7 +184,7 @@ export class KineticWordmark extends HTMLElement {
       const { family, size: fontSize } = fonts[index];
       const { metrics, height } = measurements[index];
       const scale = this.titleMode ? titleScale : capHeight / height;
-      const centerX = this.titleMode ? titleWidth / 2 : CENTER_X;
+      const centerX = this.titleMode ? titleCenterX : CENTER_X;
       const x = centerX + (metrics.actualBoundingBoxLeft - metrics.actualBoundingBoxRight) * scale / 2;
       const y = this.titleMode ? titleBaseline : CENTER_Y + (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) * scale / 2;
       context.font = `400 ${fontSize * scale}px ${family}`;
@@ -206,6 +211,7 @@ export class KineticWordmark extends HTMLElement {
   refreshPalette(): void {
     this.readPalette();
     if (this.ready) this.render(this.reducedMotion.matches ? 0 : KineticWordmark.elapsed);
+    if (this.titleMode && this.isConnected) void this.loadFonts();
   }
   private renderBlur(active: WordLayer, blurX: number): void {
     if (blurX <= 0) {

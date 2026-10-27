@@ -11,6 +11,8 @@ export class NowPlaying extends HTMLElement {
   private content!: SVGGElement;
   private references!: Record<'en' | 'zh', SVGTextElement>;
   private metrics!: Record<'en' | 'zh', FontMetric>;
+  private inkCanvas = document.createElement('canvas');
+  private inkContext = this.inkCanvas.getContext('2d', { willReadFrequently: true })!;
   private text = '';
   private ready = false;
   private fontsLoaded = false;
@@ -88,8 +90,8 @@ export class NowPlaying extends HTMLElement {
     const reference = this.references[language];
     let size = 100 * height / this.metrics[language].height;
     let best = { size, y: 0, height: 0 }, error = Infinity;
-    // SVG engines round font sizes to different subpixel grids. Calibrate at the
-    // final size, then match Chinese to the English glyph's rendered height.
+    // SVG engines round font sizes to different subpixel grids. Calibrate the
+    // nominal size before comparing the fonts' visible pixels.
     for (let attempt = 0; attempt < 5; attempt++) {
       reference.setAttribute('font-size', String(size));
       const bounds = reference.getBBox(), difference = Math.abs(bounds.height - height);
@@ -98,6 +100,31 @@ export class NowPlaying extends HTMLElement {
       size *= height / bounds.height;
     }
     reference.setAttribute('font-size', String(best.size));
+    return best;
+  }
+  private inkBounds(language: 'en' | 'zh', size: number): FontMetric {
+    const extent = Math.ceil(size * 3), baseline = Math.ceil(size * 2);
+    this.inkCanvas.width = this.inkCanvas.height = extent;
+    const context = this.inkContext;
+    context.font = `400 ${size}px ${FAMILIES[language]}`;
+    context.fillText(this.references[language].textContent!, Math.ceil(size), baseline);
+    const { data } = context.getImageData(0, 0, extent, extent);
+    let top = extent, bottom = -1;
+    for (let offset = 3; offset < data.length; offset += 4) {
+      if (data[offset] <= 127) continue;
+      const row = Math.floor(offset / (extent * 4));
+      top = Math.min(top, row); bottom = Math.max(bottom, row);
+    }
+    return bottom < 0 ? { y: 0, height: 0 } : { y: top - baseline, height: bottom - top + 1 };
+  }
+  private fontAtInkHeight(language: 'en' | 'zh', size: number, height: number): { size: number; y: number; height: number } {
+    let current = { size, ...this.inkBounds(language, size) }, best = current, error = Math.abs(current.height - height);
+    for (let attempt = 0; attempt < 5 && error > 0 && current.height > 0; attempt++) {
+      size = current.size * height / current.height;
+      current = { size, ...this.inkBounds(language, size) };
+      const difference = Math.abs(current.height - height);
+      if (difference < error) { best = current; error = difference; }
+    }
     return best;
   }
   private layout(): void {
@@ -109,7 +136,11 @@ export class NowPlaying extends HTMLElement {
     const glyphHeight = height / NOW_PLAYING_PANEL_HEIGHT * NOW_PLAYING_HEIGHT;
     this.svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
     const en = this.fontAtHeight('en', glyphHeight);
-    const faces = { en, zh: this.fontAtHeight('zh', en.height) };
+    const enInk = this.inkBounds('en', en.size);
+    // SVG text boxes include font padding. Match the visible pixels instead,
+    // keeping the English size and raising Chinese to the same cap height.
+    const faces = { en: { size: en.size, ...enInk },
+      zh: this.fontAtInkHeight('zh', this.fontAtHeight('zh', en.height).size, enInk.height) };
     const nodes = nowPlayingRuns(this.text).map(run => {
       const node = document.createElementNS(SVG_NS, 'text'); node.dataset.language = run.language;
       node.textContent = run.text; node.style.fontFamily = FAMILIES[run.language];
