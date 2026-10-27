@@ -36,5 +36,10 @@ export function transitionSettings(input?: unknown): TransitionSettings {
 }
 export function transitionLayout(settings: TransitionSettings, mode: StageMode): SavedLayout {
   if (!isStageMode(mode)) throw new Error('无效的目标布局。');
-  return settings.layoutProfiles[mode] ?? defaultStageLayout(mode);
+  const layout = structuredClone(settings.layoutProfiles[mode] ?? defaultStageLayout(mode));
+  if (mode === '16:9') {
+    const title = layout.windows['wordmark-blur-window'];
+    title.x = (1 - title.width) / 2;
+  }
+  return layout;
 }

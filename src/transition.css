@@ -16,18 +16,6 @@ h1 { font-size: 24px; letter-spacing: 3px; margin: 5px 0 0; }
 .transition-loop input { accent-color: var(--accent-inverse); }
 .transition-preview, .transition-controls { max-width: 1120px; margin: auto; padding: 0 28px; }
 #transition-viewport { position: relative; width: min(100%, calc(max(240px, 100dvh - 310px) * var(--transition-aspect, 1.7777778))); aspect-ratio: 16 / 9; margin: auto; overflow: hidden; background: repeating-conic-gradient(#25232b 0% 25%, #34313c 0% 50%) 0 0 / 24px 24px; border: 1px solid #ffffff18; }
-#transition-surface { position: absolute; left: 0; top: 0; overflow: hidden; transform-origin: top left; isolation: isolate; background: transparent; }
-#transition-surface > .transition-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.transition-cover { z-index: 40; }
-.transition-grid { z-index: 50; }
-.transition-text { z-index: 60; overflow: visible; font: 400 190px 'StreamUI Retro Pixel', monospace; }
-.transition-text text { fill: currentColor; }
-.transition-tunnel { z-index: 45; fill: none; stroke: var(--accent-inverse); stroke-width: 4; }
-.transition-arrival-base { z-index: 10; }
-#transition-surface #workspace { position: absolute; inset: 0; transform: none; z-index: 20; background: transparent; }
-#transition-surface #workspace .stage-backdrop, #transition-surface #workspace .stage-dividers { display: none; }
-#transition-surface #workspace .chat-lift { animation: none !important; border-color: transparent !important; }
-.transition-outlines { z-index: 30; fill: none; stroke: var(--accent); stroke-linecap: butt; pointer-events: none; }
 .transition-controls { padding-top: 17px; padding-bottom: 26px; }
 .transition-readout, .transition-notes { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
 #transition-time { color: #b8b0c3; font: 12px monospace; }

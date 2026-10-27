@@ -14,6 +14,7 @@ public sealed class HostRuntime : IAsyncDisposable
     public string? Error { get; private set; }
     public string ObsUrl => $"http://127.0.0.1:{obsPort}/";
     public string ConfigUrl => $"http://127.0.0.1:{configPort}/";
+    public bool AwayEnabled => store.Current.Away.Enabled;
     public event Action? Changed;
     public event Action? ShutdownRequested;
     public HostRuntime(SettingsStore store, string root, int obsPort, int configPort)
@@ -26,6 +27,16 @@ public sealed class HostRuntime : IAsyncDisposable
         try { await StopCore(); await StartCore(); }
         finally { operations.Release(); }
     }
+    public async Task SetAway(bool enabled)
+    {
+        await operations.WaitAsync();
+        try
+        {
+            if (server is not null) await server.SetAway(enabled);
+            else { await store.Save(store.Current with { Away = store.Current.Away with { Enabled = enabled } }); Changed?.Invoke(); }
+        }
+        finally { operations.Release(); }
+    }
     private async Task StartCore()
     {
         if (server is not null) return;
@@ -35,6 +46,7 @@ public sealed class HostRuntime : IAsyncDisposable
         {
             next = new HostServer(store, root, obsPort, configPort);
             next.ShutdownRequested += () => ShutdownRequested?.Invoke();
+            next.SettingsChanged += () => Changed?.Invoke();
             await next.Start(); server = next; Set(ServiceState.Running);
         }
         catch (Exception error)

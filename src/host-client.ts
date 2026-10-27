@@ -3,6 +3,7 @@ import type { NowPlayingTrack } from './now-playing-data.ts';
 import type { StageMode } from './stage-layout.ts';
 
 export interface ObsSettings { url: string; password: string; scene21: string; scene16: string }
+export interface AwaySettings { enabled: boolean; text1: string; text2: string; overlayOpacity: number }
 
 export interface HostConfig {
   audio: { enabled: boolean; deviceId: string; channel: number; gain: number };
@@ -14,10 +15,12 @@ export interface HostConfig {
   layoutMode: StageMode;
   layoutProfiles: Partial<Record<StageMode, SavedLayout | null>>;
   obs: ObsSettings;
+  away?: AwaySettings;
 }
+export interface ObsTransition { id: string; name: string; startedAt: number; phase: 'started' | 'ended' | 'video-ended' }
 export interface HostState {
   nowPlaying?: NowPlayingTrack;
-  obs?: { state: string; scene: string | null; error: string | null };
+  obs?: { state: string; scene: string | null; error: string | null; detail?: string | null; transition?: ObsTransition | null };
   config: HostConfig;
   audio: { state: string; error: string | null; deviceId: string | null; sampleRate: number; channels: number; deviceSampleRate: number; frameRate: number };
   laplace: { state: string; error: string | null; localBridge: boolean; events: number; lastEventAt: string | null };

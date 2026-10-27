@@ -29,7 +29,10 @@ function sync(): void {
   const obs = state?.obs;
   status.textContent = !host.connected ? 'Host 离线' : ({ disabled: '未启用', connecting: '连接中', connected: '已连接', reconnecting: '等待重连' }[obs?.state ?? 'disabled'] ?? '等待连接');
   status.dataset.live = String(host.connected && obs?.state === 'connected');
-  detail.textContent = obs?.error ?? (obs?.scene ? `当前输出场景：${obs.scene}` : '配置场景名称后监听 OBS 的实际输出场景。');
+  const transition = obs?.transition;
+  detail.textContent = obs?.error ?? obs?.detail ?? (transition?.phase === 'started'
+    ? `正在转场：${transition.name} · 画面完全遮住：1000 ms · 建议 OBS 延迟：1100 ms`
+    : obs?.scene ? `当前输出场景：${obs.scene} · 建议 OBS 延迟：1100 ms` : '配置场景名称后监听 OBS 的实际输出场景。');
   modeDetail.textContent = `${picker.value} · 两套布局独立保存`;
 }
 

@@ -6,6 +6,7 @@ namespace StreamUI;
 public record AudioSettings(bool Enabled = true, string DeviceId = "default", int Channel = -1, double Gain = 1);
 public record LaplaceSettings(bool Enabled = true, string Url = "ws://localhost:9696", string Token = "", bool StartLocalBridge = true);
 public record CanvasSettings(int Width = 3840, int Height = 2160);
+public record AwaySettings(bool Enabled = false, string Text1 = "主播暂离片刻，马上回来。", string Text2 = "", double OverlayOpacity = .5);
 public record ObsSettings(string Url = "ws://127.0.0.1:4455", string Password = "", string Scene21 = "", string Scene16 = "")
 {
     public bool Enabled => !string.IsNullOrWhiteSpace(Scene21) || !string.IsNullOrWhiteSpace(Scene16);
@@ -25,10 +26,11 @@ public record HostSettings(AudioSettings Audio, LaplaceSettings Laplace, CanvasS
     public string LayoutMode { get; init; } = "21:9";
     public Dictionary<string, SavedLayout?> LayoutProfiles { get; init; } = new();
     public ObsSettings Obs { get; init; } = new();
+    public AwaySettings Away { get; init; } = new();
     public const int CurrentLayoutVersion = 3;
     public int LayoutVersion { get; init; } = CurrentLayoutVersion;
     public static HostSettings Default => new(new(), new(), new(), null);
-    public object Public() => new { Audio, Laplace = Laplace with { Token = "" }, Canvas, Layout, Titles, LayoutVersion, LayoutMode, LayoutProfiles, Obs = Obs with { Password = "" } };
+    public object Public() => new { Audio, Laplace = Laplace with { Token = "" }, Canvas, Layout, Titles, LayoutVersion, LayoutMode, LayoutProfiles, Obs = Obs with { Password = "" }, Away };
     public static bool IsLayoutMode(string? mode) => mode is "21:9" or "16:9";
     public HostSettings SwitchLayout(string mode)
     {
@@ -52,6 +54,9 @@ public record HostSettings(AudioSettings Audio, LaplaceSettings Laplace, CanvasS
         if (Canvas.Width is < 640 or > 7680 || Canvas.Height is < 360 or > 4320) throw new ArgumentException("画布尺寸应为 640–7680 × 360–4320。");
         if (Titles is null || new[] { Titles.English, Titles.Chinese }.Any(lines => lines is null || lines.Length is < 1 or > 12 || lines.Any(text => string.IsNullOrWhiteSpace(text) || text.Length > 100 || text.Any(char.IsControl))))
             throw new ArgumentException("中英文标题分别支持 1–12 段文案，每段最多 100 个字符。");
+        if (Away is null || string.IsNullOrWhiteSpace(Away.Text1) || Away.Text2 is null || Away.Text1.Length > 500 || Away.Text2.Length > 500
+            || Away.Text1.Any(char.IsControl) || Away.Text2.Any(char.IsControl) || !double.IsFinite(Away.OverlayOpacity) || Away.OverlayOpacity is < 0 or > 1)
+            throw new ArgumentException("暂离提示第一段不能为空，每段最多 500 个字符，遮罩透明度应为 0%–100%。");
         if (LayoutVersion != CurrentLayoutVersion) throw new ArgumentException("布局版本不匹配，请刷新配置页。");
         if (!IsLayoutMode(LayoutMode) || LayoutProfiles is null || LayoutProfiles.Keys.Any(key => !IsLayoutMode(key)))
             throw new ArgumentException("布局类型无效。");

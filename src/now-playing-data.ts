@@ -1,4 +1,5 @@
 import { ON_AIR_BLINK } from './on-air-motion.ts';
+import { mixedTextRuns } from './mixed-text.ts';
 
 export const NOW_PLAYING_HEIGHT = 42;
 export const NOW_PLAYING_PANEL_HEIGHT = 218.615;
@@ -12,13 +13,7 @@ export function nowPlayingText(track: NowPlayingTrack | null | undefined): strin
 }
 
 export function nowPlayingRuns(text: string): PlayingRun[] {
-  const runs: PlayingRun[] = [];
-  for (const character of text) {
-    const language = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3000-\u303f\uff00-\uffef]/u.test(character) ? 'zh' : 'en';
-    if (runs.at(-1)?.language === language) runs.at(-1)!.text += character;
-    else runs.push({ language, text: character });
-  }
-  return runs;
+  return mixedTextRuns(text);
 }
 
 export function nowPlayingLit(time: number): boolean {

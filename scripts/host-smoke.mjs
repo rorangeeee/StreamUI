@@ -95,6 +95,22 @@ try {
   check(state.data.config.laplace.token === '', 'OBS state never includes the LAPLACE token');
   const devices = await request('/api/audio/devices');
   check(Array.isArray(devices), 'audio device enumeration endpoint');
+  check((await fetch(new URL('/api/away', obsUrl), { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-StreamUI-Request': '1' }, body: JSON.stringify({ enabled: true }) })).status === 404,
+    'OBS display port cannot change away mode');
+  const away = { enabled: true, text1: '主播暂离 BRB', text2: '稍后回来', overlayOpacity: .65 };
+  await request('/api/settings', 'PUT', { ...original, away });
+  check((await request('/api/state')).config.away.enabled === false, 'saving away preferences cannot overwrite its independent mode switch');
+  await request('/api/away', 'PUT', { enabled: true });
+  const awayEvent = JSON.parse(await events.next(data => typeof data === 'string' && JSON.parse(data).type === 'state' && JSON.parse(data).data.config.away?.enabled));
+  check(awayEvent.data.config.away.text1 === away.text1 && awayEvent.data.config.away.text2 === away.text2 && awayEvent.data.config.away.overlayOpacity === .65,
+    'away mode broadcasts both configured paragraphs and mask opacity to OBS');
+  await request('/api/settings', 'PUT', { ...original, away: { ...away, enabled: false, text2: '' } });
+  check((await request('/api/state')).config.away.enabled && (await request('/api/state')).config.away.text2 === '',
+    'a stale settings form preserves active away mode while allowing an empty second paragraph');
+  await request('/api/away', 'PUT', { enabled: false });
+  check(!(await request('/api/state')).config.away.enabled, 'the independent away switch can exit the mode');
+  check((await fetch(new URL('/api/away', configUrl), { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-StreamUI-Request': '1' }, body: '{}' })).status === 400,
+    'missing away-mode state is rejected');
   if (devices.length) {
     await request('/api/settings', 'PUT', { ...original, audio: { ...original.audio, enabled: true } });
     const audio = socket('/ws/audio'); sockets.push(audio.ws);

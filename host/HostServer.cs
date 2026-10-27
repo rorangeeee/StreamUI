@@ -20,6 +20,7 @@ public sealed class HostServer : IAsyncDisposable
     public string ObsUrl => $"http://127.0.0.1:{obsPort}/";
     public string ConfigUrl => $"http://127.0.0.1:{configPort}/";
     public event Action? ShutdownRequested;
+    public event Action? SettingsChanged;
     private object State() => new { config = store.Current.Public(), audio = audio.Status, laplace = laplace.Status, nowPlaying = nowPlaying.Status, obs = obs.Status, obsUrl = ObsUrl, configUrl = ConfigUrl, startup = WindowsStartup.Enabled };
     private object StateMessage() => new { type = "state", data = State() };
     private void Broadcast() => events.Publish(StateMessage());
@@ -46,6 +47,8 @@ public sealed class HostServer : IAsyncDisposable
             if (origin.Length > 0 && !allowed.Contains(origin)) { context.Response.StatusCode = 403; return; }
             var mutation = context.Request.Method is not ("GET" or "HEAD");
             var admin = context.Request.Path.StartsWithSegments("/api/settings") || context.Request.Path.StartsWithSegments("/api/layout")
+                || context.Request.Path.StartsWithSegments("/api/away")
+                || context.Request.Path.StartsWithSegments("/api/obs")
                 || context.Request.Path.StartsWithSegments("/api/audio") || context.Request.Path.StartsWithSegments("/api/laplace")
                 || context.Request.Path.StartsWithSegments("/api/startup") || context.Request.Path.StartsWithSegments("/api/open");
             admin |= context.Request.Path == "/api/shutdown";
@@ -70,13 +73,15 @@ public sealed class HostServer : IAsyncDisposable
             try
             {
                 // Layout has its own endpoint; stale settings forms cannot overwrite a newer layout.
-                settings = settings with { Layout = store.Current.Layout, LayoutMode = store.Current.LayoutMode, LayoutProfiles = store.Current.LayoutProfiles };
+                settings = settings with { Layout = store.Current.Layout, LayoutMode = store.Current.LayoutMode, LayoutProfiles = store.Current.LayoutProfiles,
+                    Away = settings.Away with { Enabled = store.Current.Away.Enabled } };
                 var previous = store.Current;
                 await store.Save(settings);
                 if (settings.Audio != previous.Audio) audio.Configure(settings.Audio);
                 if (settings.Laplace != previous.Laplace) await laplace.Configure(settings.Laplace);
                 if (settings.Obs != previous.Obs) obs.Configure(settings.Obs);
                 Broadcast();
+                SettingsChanged?.Invoke();
                 return Results.Json(State(), SettingsStore.Json);
             }
             finally { mutations.Release(); }
@@ -99,6 +104,19 @@ public sealed class HostServer : IAsyncDisposable
             var change = await request.ReadFromJsonAsync<LayoutModeRequest>(SettingsStore.Json) ?? throw new ArgumentException("缺少布局类型。");
             await mutations.WaitAsync();
             try { await store.Save(store.Current.SwitchLayout(change.Mode)); Broadcast(); return Results.Json(State(), SettingsStore.Json); }
+            finally { mutations.Release(); }
+        });
+        app.MapPut("/api/away", async (HttpRequest request) =>
+        {
+            var change = await request.ReadFromJsonAsync<AwayModeRequest>(SettingsStore.Json);
+            if (change?.Enabled is not bool enabled) throw new ArgumentException("缺少暂离模式状态。");
+            await SetAway(enabled);
+            return Results.Json(State(), SettingsStore.Json);
+        });
+        app.MapPost("/api/obs/reconnect", async () =>
+        {
+            await mutations.WaitAsync();
+            try { obs.Configure(store.Current.Obs); return Results.Ok(); }
             finally { mutations.Release(); }
         });
         app.MapGet("/api/audio/devices", async () =>
@@ -175,6 +193,19 @@ public sealed class HostServer : IAsyncDisposable
     }
     private record StartupRequest(bool Enabled);
     private record LayoutModeRequest(string Mode);
+    private record AwayModeRequest(bool? Enabled);
+
+    public async Task SetAway(bool enabled)
+    {
+        await mutations.WaitAsync();
+        try
+        {
+            if (store.Current.Away.Enabled == enabled) return;
+            await store.Save(store.Current with { Away = store.Current.Away with { Enabled = enabled } });
+            Broadcast(); SettingsChanged?.Invoke();
+        }
+        finally { mutations.Release(); }
+    }
 
     private async Task ApplyObsScene(string scene)
     {

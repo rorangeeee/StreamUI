@@ -1,9 +1,10 @@
 import { ON_AIR_BLINK } from './on-air-motion.ts';
 import { NOW_PLAYING_HEIGHT, NOW_PLAYING_PANEL_HEIGHT, nowPlayingLit, nowPlayingRuns, nowPlayingText } from './now-playing-data.ts';
 import type { NowPlayingTrack } from './now-playing-data.ts';
+import { PIXEL_FONT_FAMILIES } from './mixed-text.ts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const FAMILIES = { en: '"StreamUI Retro Pixel", monospace', zh: '"StreamUI Pixel Chinese", sans-serif' };
+const FAMILIES = PIXEL_FONT_FAMILIES;
 interface FontMetric { y: number; height: number }
 
 export class NowPlaying extends HTMLElement {

@@ -128,6 +128,14 @@ internal static class SelfTests
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
         await runtime.Start();
         check(runtime.State == ServiceState.Running && (await http.GetStringAsync(runtime.ConfigUrl)).Contains("settings-form"), "tray service starts its HTTP pages");
+        var updates = 0; runtime.Changed += () => Interlocked.Increment(ref updates);
+        await runtime.SetAway(true);
+        using (var awayState = System.Text.Json.JsonDocument.Parse(await http.GetStringAsync(runtime.ObsUrl + "api/state")))
+            check(runtime.AwayEnabled && awayState.RootElement.GetProperty("config").GetProperty("away").GetProperty("enabled").GetBoolean() && updates > 0,
+                "tray away toggle broadcasts the same mode to browsers and refreshes menu state");
+        check(new SettingsStore(directory).Current.Away.Enabled, "tray away changes persist to disk");
+        await runtime.SetAway(false);
+        check(!runtime.AwayEnabled && !new SettingsStore(directory).Current.Away.Enabled, "tray can leave away mode without changing its configured text");
         using (var state = System.Text.Json.JsonDocument.Parse(await http.GetStringAsync(runtime.ObsUrl + "api/state")))
             check(state.RootElement.TryGetProperty("nowPlaying", out var track) && track.TryGetProperty("playing", out _), "automatic media state is exposed to OBS without manual track settings");
         using var socket = new System.Net.WebSockets.ClientWebSocket();

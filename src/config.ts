@@ -1,5 +1,6 @@
 import './config.css';
 import { fillObsSettings, obsSettingsFromForm } from './config-layout.ts';
+import { fillAwaySettings, awaySettingsFromForm } from './config-away.ts';
 import { api, host } from './host-client.ts';
 import type { HostConfig, HostState } from './host-client.ts';
 import { HostAudio } from './audio.ts';
@@ -111,6 +112,7 @@ async function refreshDevices(preferred = select('audio-device').value): Promise
 }
 function fillForm(config: HostConfig): void {
   fillObsSettings(config.obs);
+  fillAwaySettings(config.away);
   input('audio-enabled').checked = config.audio.enabled;
   if (config.audio.deviceId !== 'default') select('audio-device').add(new Option('已保存的输出设备', config.audio.deviceId));
   select('audio-device').value = config.audio.deviceId;
@@ -129,7 +131,9 @@ function fillForm(config: HostConfig): void {
 input('audio-gain').oninput = () => $('gain-value').textContent = `${Number(input('audio-gain').value).toFixed(2)}×`;
 select('audio-device').onchange = () => updateChannels();
 $('refresh-devices').onclick = () => void refreshDevices().catch(error => feedback(String(error.message), true));
-$('settings-form').addEventListener('input', () => $('save-status').textContent = '有未保存的修改');
+$('settings-form').addEventListener('input', event => {
+  if (!(event.target as HTMLElement).hasAttribute('data-immediate')) $('save-status').textContent = '有未保存的修改';
+});
 $('settings-form').addEventListener('submit', async event => {
   event.preventDefault(); if (!settings) return;
   const button = $<HTMLButtonElement>('save-settings'); button.disabled = true;
@@ -145,6 +149,7 @@ $('settings-form').addEventListener('submit', async event => {
     layoutMode: host.state?.config.layoutMode ?? '21:9',
     layoutProfiles: host.state?.config.layoutProfiles ?? {},
     obs: obsSettingsFromForm(),
+    away: awaySettingsFromForm(),
   };
   try {
     await api<HostState>('/api/settings', 'PUT', next); settings = next;
@@ -168,6 +173,7 @@ function action(id: string, path: string, message: string): void {
 }
 action('restart-audio', '/api/audio/restart', '正在重新连接音频设备');
 action('reconnect-laplace', '/api/laplace/reconnect', '正在重新连接 LAPLACE');
+action('reconnect-obs', '/api/obs/reconnect', '正在重新连接 OBS（使用已保存的设置）');
 action('open-obs', '/api/open/obs', '已打开 OBS 画面');
 $('copy-url').onclick = async () => {
   if (!host.state) return;

@@ -10,8 +10,8 @@
 #workspace[data-layout-mode="16:9"] stream-metadata { display: none; }
 
 #workspace[data-layout-mode="16:9"] .title-window { background: transparent; overflow: visible; }
-/* Use the 21:9 title's fitting width; longer text can extend over the transparent video. */
-#workspace[data-layout-mode="16:9"] #bilingual-title { --title-reference-width: 2265.558; }
+/* Keep the original fitting size while centering both short and long titles. */
+#workspace[data-layout-mode="16:9"] #bilingual-title { --title-reference-width: 2265.558; --title-centered: 1; }
 #workspace[data-layout-mode="16:9"] .brand-window { background: var(--accent); overflow: hidden; }
 #workspace[data-layout-mode="16:9"] .brand-window[data-inverted="true"] { background: var(--accent-inverse); }
 #workspace[data-layout-mode="16:9"] .brand-window .themebar-decorations {
@@ -29,12 +29,11 @@
 #workspace[data-layout-mode="16:9"] .brand-window[data-inverted="true"] .themebar-decorations { filter: invert(1); }
 
 /* Hard, unblurred edges keep the existing text/highlight colors readable over video. */
-#workspace[data-layout-mode="16:9"] #bilingual-title,
-#workspace[data-layout-mode="16:9"] stream-marquee {
-  filter: drop-shadow(calc(3px * var(--ui-scale)) calc(3px * var(--ui-scale)) 0 #000);
-}
 #workspace[data-layout-mode="16:9"] #bilingual-title { filter: drop-shadow(calc(3px * var(--ui-scale)) calc(3px * var(--ui-scale)) 0 #000) drop-shadow(calc(-1px * var(--ui-scale)) calc(-1px * var(--ui-scale)) 0 rgb(255 255 255 / .65)); }
-#workspace[data-layout-mode="16:9"] stream-marquee { left: 7.6844%; }
+#workspace[data-layout-mode="16:9"] stream-marquee {
+  left: 7.6844%;
+  filter: drop-shadow(calc(1px * var(--ui-scale)) calc(1px * var(--ui-scale)) 0 #000);
+}
 #workspace[data-layout-mode="16:9"] .wide-now-playing {
   position: absolute; inset: auto 0 calc(-20px * var(--ui-scale));
   width: 100%; height: calc(218.615px * var(--ui-scale)); z-index: 10;

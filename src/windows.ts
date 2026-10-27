@@ -219,6 +219,7 @@ export class WindowManager {
     if (this.mode === '16:9' && panel.id === 'stream-window') Object.assign(rect, { x: 0, y: 0, width: this.workspace.clientWidth, height: this.workspace.clientHeight, angle: 0 });
     const scale = this.geometryScale();
     fitRect(rect, this.workspace.clientWidth, this.workspace.clientHeight, 80 * scale, 40 * scale);
+    if (this.mode === '16:9' && panel.id === 'wordmark-blur-window') rect.x = (this.workspace.clientWidth - rect.width) / 2;
     this.apply(panel);
   }
 

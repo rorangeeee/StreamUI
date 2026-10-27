@@ -37,6 +37,8 @@ export class StagePresentation {
     if (this.mode === mode) return;
     this.mode = mode;
     this.workspace.dataset.layoutMode = mode;
+    this.title.querySelector('kinetic-wordmark')!.setAttribute('effect', mode === '16:9' ? 'blur' : 'stretch');
+    this.brand.querySelector('kinetic-wordmark')!.setAttribute('effect', mode === '16:9' ? 'stretch' : 'blur');
     this.chatHistory.setActive(mode === '16:9');
     (mode === '16:9' ? this.brand : this.title).prepend(this.decorations);
     if (this.nowPlaying) {

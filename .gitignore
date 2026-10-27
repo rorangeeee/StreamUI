@@ -4,4 +4,4 @@ dist/
 *.log
 host/bin/
 host/obj/
-/StreamUI Host.exe
+/StreamUI Host*.exe

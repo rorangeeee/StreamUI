@@ -7,6 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>StreamUI.Host</AssemblyName>
+    <Version>0.1.0</Version>
     <Product>StreamUI Host</Product>
     <Title>StreamUI Host</Title>
     <ApplicationIcon>Assets/StreamUI.ico</ApplicationIcon>

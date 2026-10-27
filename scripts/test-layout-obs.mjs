@@ -31,6 +31,9 @@ function program(name, type = 'CurrentProgramSceneChanged') {
   if (type === 'CurrentProgramSceneChanged') scene = name;
   for (const ws of clients) frame(ws, { op: 5, d: { eventType: type, eventIntent: 4, eventData: { sceneName: name } } });
 }
+function transition(type, name = '延迟转场') {
+  for (const ws of clients) frame(ws, { op: 5, d: { eventType: type, eventIntent: 16, eventData: { transitionName: name } } });
+}
 const mock = createServer();
 mock.on('upgrade', (req, ws) => {
   const accept = createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
@@ -57,6 +60,7 @@ mock.on('upgrade', (req, ws) => {
           invalidAuth++; const close = Buffer.alloc(2); close.writeUInt16BE(4009); frame(ws, close, 8); ws.end(); continue;
         }
         assert.equal(message.d.eventSubscriptions & 4, 4);
+        assert.equal(message.d.eventSubscriptions & 16, 16);
         frame(ws, { op: 2, d: { negotiatedRpcVersion: 1 } });
       } else if (message.op === 6) {
         assert.equal(message.d.requestType, 'GetCurrentProgramScene'); queries++;
@@ -103,6 +107,27 @@ try {
   program('游戏现场');
   await eventually(async () => (await request('/api/state')).config.layoutMode === '16:9', '16:9 scene');
   check(true, 'both named program scenes select their respective layout');
+  transition('SceneTransitionStarted');
+  await eventually(async () => (await request('/api/state')).obs.transition?.phase === 'started', 'transition start');
+  const started = (await request('/api/state')).obs.transition;
+  check(started.name === '延迟转场' && started.id && Math.abs(Date.now() - started.startedAt) < 1500,
+    'transition start exposes one shared identity and timestamp before the destination is known');
+  check((await request('/api/state')).config.layoutMode === '16:9', 'starting a delayed transition leaves the current layout selection intact');
+  program('超宽现场');
+  await eventually(async () => (await request('/api/state')).config.layoutMode === '21:9', 'delayed destination');
+  check((await request('/api/state')).obs.transition.id === started.id, 'the delayed program event keeps the same animation identity');
+  const queryCount = queries;
+  transition('SceneTransitionEnded');
+  await eventually(async () => (await request('/api/state')).obs.transition?.phase === 'ended' && queries > queryCount, 'transition end');
+  check((await request('/api/state')).obs.transition.startedAt === started.startedAt, 'transition end resynchronizes the scene without restarting the animation clock');
+  transition('SceneTransitionVideoEnded');
+  await eventually(async () => (await request('/api/state')).obs.transition?.phase === 'video-ended', 'video end');
+  check((await request('/api/state')).obs.transition.id === started.id, 'video-end notifications do not create another transition');
+  transition('SceneTransitionStarted');
+  await eventually(async () => (await request('/api/state')).obs.transition?.id !== started.id, 'second transition');
+  check(true, 'a subsequent OBS transition receives a fresh animation identity');
+  program('游戏现场');
+  await eventually(async () => (await request('/api/state')).config.layoutMode === '16:9', 'restore scene');
   await request('/api/layout-mode', 'PUT', { mode: '21:9' });
   await request('/api/settings', 'PUT', { ...original, obs: { ...obs, scene16: '' } });
   await eventually(async () => (await request('/api/state')).obs.scene === '游戏现场', 'partial mapping reconnect');
@@ -112,6 +137,7 @@ try {
   scene = '超宽现场'; for (const ws of clients) ws.destroy();
   await eventually(async () => (await request('/api/state')).config.layoutMode === '21:9', 'reconnect');
   check(true, 'OBS reconnect re-authenticates and resynchronizes the program scene');
+  check((await request('/api/state')).obs.transition == null, 'reconnecting clears stale transition events');
   await request('/api/settings', 'PUT', { ...original, obs: { ...obs, password: 'wrong' } });
   await eventually(async () => (await request('/api/state')).obs.state === 'reconnecting' && invalidAuth > 0, 'authentication error');
   check(Boolean((await request('/api/state')).obs.error), 'authentication failures expose a recoverable connection status');

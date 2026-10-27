@@ -20,8 +20,8 @@ import { host } from './host-client.ts';
 import type { HostState } from './host-client.ts';
 import { isStageMode } from './stage-layout.ts';
 import type { StageMode } from './stage-layout.ts';
-import { stageDividerPaths } from './stage-dividers.ts';
-import { sampleTransition, transitionManifest, transitionTiles, TRANSITION_FPS, TRANSITION_HIGHLIGHT, TRANSITION_PHASE_LABELS, TRANSITION_PURPLE, TRANSITION_SEED } from './transition-model.ts';
+import { transitionManifest, TRANSITION_DURATION, TRANSITION_FPS, TRANSITION_PHASE_LABELS, TRANSITION_SEED } from './transition-model.ts';
+import { TransitionRenderer } from './transition-renderer.ts';
 import { transitionLayout, transitionSettings } from './transition-settings.ts';
 import type { TransitionSettings } from './transition-settings.ts';
 
@@ -35,16 +35,11 @@ interface TransitionAPI {
 }
 declare global { interface Window { streamuiTransition: TransitionAPI; __STREAMUI_TRANSITION_SETTINGS__?: unknown } }
 
-const NS = 'http://www.w3.org/2000/svg';
-const element = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] => {
-  const node = document.createElementNS(NS, tag);
-  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
-  return node;
-};
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id)! as T;
 const surface = $('transition-surface'), viewport = $('transition-viewport');
 const targetPicker = $<HTMLSelectElement>('transition-target');
 const scrub = $<HTMLInputElement>('transition-scrub');
+scrub.max = String(transitionManifest().totalFrames);
 const params = new URLSearchParams(location.search);
 const renderMode = params.get('render') === '1';
 document.body.dataset.transitionRender = String(renderMode);
@@ -52,7 +47,6 @@ let target: StageMode = isStageMode(params.get('to')) ? params.get('to') as Stag
 const seed = params.has('seed') && Number.isFinite(Number(params.get('seed'))) ? Number(params.get('seed')) >>> 0 : TRANSITION_SEED;
 let settings = transitionSettings(window.__STREAMUI_TRANSITION_SETTINGS__);
 let retroPixelLoaded = false, currentTime = 0, animation = 0, playStart = 0;
-let tiles: SVGRectElement[] = [], previousTileCount = 0, components: HTMLElement[] = [];
 
 // The arriving layout is a visual snapshot, never another audio/chat collector.
 host.setOffline(true);
@@ -61,28 +55,9 @@ const workspace = document.importNode(parsed.querySelector<HTMLElement>('#worksp
 workspace.removeAttribute('tabindex');
 workspace.querySelectorAll('[tabindex]').forEach(node => node.removeAttribute('tabindex'));
 workspace.style.opacity = '0';
-const arrivalBase = element('svg', { class: 'transition-layer transition-arrival-base' });
-const defs = element('defs');
-const mask = element('mask', { id: 'transition-arrival-mask', x: 0, y: 0, maskUnits: 'userSpaceOnUse', style: 'mask-type:luminance' });
-const maskField = element('rect', { fill: '#fff' });
-const captureHole = element('rect', { fill: '#fff' });
-mask.append(maskField, captureHole); defs.append(mask);
-const arrivalBlack = element('rect', { fill: '#000', mask: 'url(#transition-arrival-mask)' });
-const captureFlash = element('rect', { fill: '#000' });
-arrivalBase.append(defs, arrivalBlack, captureFlash);
-const outlines = element('svg', { class: 'transition-layer transition-outlines' });
-const outlinePaths = Array.from({ length: 4 }, () => element('path', { pathLength: 1 }));
-outlines.append(...outlinePaths);
-const cover = element('svg', { class: 'transition-layer transition-cover' });
-const coverRect = element('rect'); cover.append(coverRect);
-const grid = element('svg', { class: 'transition-layer transition-grid', 'shape-rendering': 'crispEdges', fill: TRANSITION_PURPLE });
-const tunnel = element('svg', { class: 'transition-layer transition-tunnel' });
-const tunnelRects = Array.from({ length: 8 }, () => element('rect', { 'vector-effect': 'non-scaling-stroke' }));
-tunnel.append(...tunnelRects);
-const rescaling = element('svg', { class: 'transition-layer transition-text' });
-const rescalingText = element('text', { 'text-anchor': 'middle' }); rescalingText.textContent = 'RESCALING'; rescaling.append(rescalingText);
-surface.append(arrivalBase, workspace, outlines, cover, grid, tunnel, rescaling);
+surface.append(workspace);
 const presentation = new StagePresentation(workspace);
+const renderer = new TransitionRenderer(surface, workspace, false, seed);
 
 function fit(): void {
   const { width, height } = settings.canvas;
@@ -101,17 +76,6 @@ function snapshotState(): HostState {
     laplace: { state: 'disconnected', error: null, localBridge: false, events: 0, lastEventAt: null },
     startup: false, obsUrl: '', configUrl: '',
   };
-}
-
-function chatEdges(x: number, y: number, width: number, height: number, angle: number, uiScale: number): string[] {
-  const theta = -16 * Math.PI / 180, rotation = angle * Math.PI / 180, perspective = 2200 * uiScale;
-  const corners = [[0, 0], [width, 0], [width, height], [0, height]].map(([px, py]) => {
-    const dx = px - width / 2, dy = py - height / 2;
-    const z = -dx * Math.sin(theta), projection = perspective / (perspective - z);
-    const rx = dx * Math.cos(theta) * projection, ry = dy * projection;
-    return [x + width / 2 + rx * Math.cos(rotation) - ry * Math.sin(rotation), y + height / 2 + rx * Math.sin(rotation) + ry * Math.cos(rotation)];
-  });
-  return corners.map((point, index) => `M${point.join(' ')} L${corners[(index + 1) % 4].join(' ')}`);
 }
 
 async function rebuild(): Promise<void> {
@@ -135,78 +99,28 @@ async function rebuild(): Promise<void> {
   }
   workspace.querySelector<KineticWordmark>('#bilingual-title')!.setTitles(settings.titles.english, settings.titles.chinese);
   workspace.querySelector<MetadataTerminal>('stream-metadata')!.update(snapshotState());
-  for (const svg of [arrivalBase, outlines, cover, grid, tunnel, rescaling]) svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-  for (const rect of [maskField, arrivalBlack, coverRect]) { rect.setAttribute('width', String(width)); rect.setAttribute('height', String(height)); }
-  for (const [key, value] of Object.entries({ width, height })) mask.setAttribute(key, String(value));
-  const stream = rectangles['stream-window'];
-  for (const rect of [captureHole, captureFlash]) for (const [key, value] of Object.entries({ x: stream.x, y: stream.y, width: stream.width, height: stream.height,
-    transform: `rotate(${stream.angle} ${stream.x + stream.width / 2} ${stream.y + stream.height / 2})` })) rect.setAttribute(key, String(value));
-  const paths = target === '21:9' ? Object.values(stageDividerPaths(stream, rectangles['spectrogram-window'], rectangles['waveform-window']))
-    : chatEdges(rectangles['chat-window'].x, rectangles['chat-window'].y, rectangles['chat-window'].width, rectangles['chat-window'].height, rectangles['chat-window'].angle, uiScale);
-  outlinePaths.forEach((path, index) => path.setAttribute('d', paths[index]));
-  outlines.style.strokeWidth = String((target === '21:9' ? 4 : 1.6) * uiScale);
-  tunnel.style.strokeWidth = String(4 * uiScale);
-  tiles = transitionTiles(width, height, 300, seed).map(tile => element('rect', { ...tile, visibility: 'hidden' }));
-  grid.replaceChildren(...tiles); previousTileCount = 0;
-  components = ['#wordmark-blur-window', '#wordmark-window', '#chat-window', '#spectrogram-window', '#waveform-window', '#stream-window',
-    'stream-marquee[data-band="bottom-secondary"]', 'stream-marquee[data-band="bottom-primary"]'].map(selector => workspace.querySelector<HTMLElement>(selector)!)
-    .filter(node => getComputedStyle(node).display !== 'none');
+  renderer.configure(settings, target);
   fit(); draw(0);
-  const faces = await document.fonts.load('400 190px "StreamUI Retro Pixel"', 'RESCALING');
+  const faces = await document.fonts.load('400 190px "StreamUI Retro Pixel"', 'RESCALING').catch(() => []);
   retroPixelLoaded = faces.length > 0;
   $('transition-font-status').textContent = retroPixelLoaded ? 'RETRO PIXEL 已加载' : '缺少 RETRO PIXEL · 正式导出前请安装字体';
   await document.fonts.ready;
   await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
-  const context = document.createElement('canvas').getContext('2d')!;
-  let size = 190 * uiScale;
-  context.font = `400 ${size}px "StreamUI Retro Pixel", monospace`;
-  size *= Math.min(1, width * .72 / context.measureText('RESCALING').width);
-  context.font = `400 ${size}px "StreamUI Retro Pixel", monospace`;
-  const metrics = context.measureText('RESCALING');
-  rescalingText.setAttribute('font-size', String(size)); rescalingText.setAttribute('x', String(width / 2));
-  rescalingText.setAttribute('y', String(height / 2 + (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2));
+  renderer.configure(settings, target);
   draw(currentTime);
 }
 
 function draw(time: number): void {
-  currentTime = Math.min(6000, Math.max(0, time));
-  const state = sampleTransition(currentTime, tiles.length, components.length);
-  surface.dataset.phase = state.phase;
-  surface.dataset.frame = String(Math.round(state.frame));
-  surface.dataset.opaque = String(state.fullyOpaque);
-  // Tile visibility is explicit, so hide the whole SVG with display after filling.
-  grid.style.display = state.phase === 'fill' ? 'block' : 'none';
-  for (let i = Math.min(previousTileCount, state.visibleTiles); i < Math.max(previousTileCount, state.visibleTiles); i++)
-    tiles[i].setAttribute('visibility', i < state.visibleTiles ? 'visible' : 'hidden');
-  previousTileCount = state.visibleTiles;
-  cover.style.visibility = state.cover ? 'visible' : 'hidden';
-  if (state.cover) coverRect.setAttribute('fill', state.cover);
-  rescaling.style.visibility = state.textVisible ? 'visible' : 'hidden'; rescaling.style.color = state.textColor;
-  tunnel.style.visibility = state.tunnelVisible ? 'visible' : 'hidden';
-  const { width, height } = settings.canvas;
-  tunnelRects.forEach((rect, index) => {
-    const w = width * .96 * .76 ** index * state.tunnelScale, h = w * 9 / 16;
-    for (const [key, value] of Object.entries({ x: (width - w) / 2, y: (height - h) / 2, width: w, height: h })) rect.setAttribute(key, String(value));
-  });
-  workspace.style.opacity = arrivalBase.style.opacity = outlines.style.opacity = state.arrivalVisible ? '1' : '0';
-  workspace.setAttribute('aria-hidden', String(!state.arrivalVisible));
-  captureHole.setAttribute('fill', state.captureRevealed ? '#000' : '#fff');
-  captureFlash.setAttribute('fill', state.captureColor); captureFlash.style.visibility = state.captureRevealed ? 'hidden' : 'visible';
-  components.forEach((node, index) => node.style.opacity = state.components[index] ? '1' : '0');
-  outlinePaths.forEach((path, index) => {
-    const p = state.lineProgress[index];
-    path.style.visibility = p > 0 ? 'visible' : 'hidden';
-    path.setAttribute('stroke-dasharray', p >= 1 ? 'none' : `${p} 1`);
-    path.setAttribute('stroke-dashoffset', String(-(1 - p) / 2));
-  });
+  currentTime = Math.min(TRANSITION_DURATION, Math.max(0, time));
+  const state = renderer.draw(currentTime);
   scrub.value = String(Math.round(currentTime * .06));
   $('transition-phase').textContent = TRANSITION_PHASE_LABELS[state.phase];
-  $('transition-time').textContent = `${(currentTime / 1000).toFixed(3)} s / 6.000 s`;
+  $('transition-time').textContent = `${(currentTime / 1000).toFixed(3)} s / ${(TRANSITION_DURATION / 1000).toFixed(3)} s`;
 }
 function pause(): void { cancelAnimationFrame(animation); animation = 0; }
 function tick(time: number): void {
   draw(time - playStart);
-  if (currentTime >= 6000) {
+  if (currentTime >= TRANSITION_DURATION) {
     if (!$<HTMLInputElement>('transition-loop').checked) { animation = 0; return; }
     playStart = time + 450;
   }

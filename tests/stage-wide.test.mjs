@@ -13,6 +13,7 @@ test('16:9 reserves the entire canvas for video and places the UI around it', ()
   const chat = layout.windows['chat-window'];
   assert.ok(rail.width < .06 && rail.height > .7 && rail.x === 0);
   assert.ok(title.y === 0 && title.width < .2);
+  assert.ok(Math.abs(title.x + title.width / 2 - .5) < 1e-10);
   assert.ok(chat.x > .85 && chat.height > .85 && chat.x + chat.width < 1);
 });
 

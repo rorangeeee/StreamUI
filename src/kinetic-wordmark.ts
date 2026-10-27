@@ -12,7 +12,7 @@ interface WordLayer { group: SVGGElement; glyphs: GlyphLayer[]; spacingAnchorX: 
 
 /** The brand and centered bilingual titles share the original playback clock and motion curve. */
 export class KineticWordmark extends HTMLElement {
-  static observedAttributes = ['inverted'];
+  static observedAttributes = ['inverted', 'effect'];
   private static playing = new Set<KineticWordmark>();
   private static elapsed = 0;
   private static previousTime = 0;
@@ -80,8 +80,9 @@ export class KineticWordmark extends HTMLElement {
     document.removeEventListener('visibilitychange', this.syncPlayback);
     this.reducedMotion.removeEventListener('change', this.syncPlayback);
   }
-  attributeChangedCallback(): void {
+  attributeChangedCallback(name: string): void {
     if (!this.svg) return;
+    if (name === 'effect') this.blurOnly = this.getAttribute('effect') === 'blur';
     this.readPalette();
     if (this.ready) this.render(this.reducedMotion.matches ? 0 : KineticWordmark.elapsed);
   }
@@ -169,9 +170,8 @@ export class KineticWordmark extends HTMLElement {
     const titleReferenceWidth = (parseFloat(style.getPropertyValue('--title-reference-width')) || 0) * uiScale;
     const titleScale = Math.min(1, titleHeight / (276.2784 * uiScale),
       Math.max(1, Math.max(titleWidth, titleReferenceWidth) - parseFloat(style.fontSize) * 2.8) / Math.max(1, ...measurements.map(item => item.width)));
-    // Keep the existing anchor for short titles; let long overlay titles expand
-    // to the right instead of clipping their left half outside the canvas.
-    const titleCenterX = Math.max(titleWidth / 2,
+    const centeredTitle = style.getPropertyValue('--title-centered').trim() === '1';
+    const titleCenterX = centeredTitle ? titleWidth / 2 : Math.max(titleWidth / 2,
       titleReferenceWidth ? Math.max(...measurements.map(item => item.width)) * titleScale / 2 + 16 * uiScale : 0);
     const titleBaseline = titleHeight / 2 + ((parseFloat(style.lineHeight) || 168.55 * uiScale) - 276.2784 * uiScale / 2) * titleScale;
     if (this.titleMode) {
