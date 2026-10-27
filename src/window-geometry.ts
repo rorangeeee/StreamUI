@@ -10,14 +10,14 @@ export function localPoint(rect: WindowRect, x: number, y: number): { x: number;
   return { x: dx * Math.cos(angle) + dy * Math.sin(angle) + rect.width / 2, y: -dx * Math.sin(angle) + dy * Math.cos(angle) + rect.height / 2 };
 }
 
-export function resizeRect(rect: WindowRect, edges: ResizeEdges, dx: number, dy: number): WindowRect {
+export function resizeRect(rect: WindowRect, edges: ResizeEdges, dx: number, dy: number, minWidth = 220, minHeight = 120): WindowRect {
   const angle = rect.angle * Math.PI / 180;
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   const localX = dx * cos + dy * sin;
   const localY = -dx * sin + dy * cos;
-  const width = Math.max(220, rect.width + (edges.right ? localX : edges.left ? -localX : 0));
-  const height = Math.max(120, rect.height + (edges.bottom ? localY : edges.top ? -localY : 0));
+  const width = Math.max(minWidth, rect.width + (edges.right ? localX : edges.left ? -localX : 0));
+  const height = Math.max(minHeight, rect.height + (edges.bottom ? localY : edges.top ? -localY : 0));
   const shiftX = (width - rect.width) / 2 * (edges.left ? -1 : edges.right ? 1 : 0);
   const shiftY = (height - rect.height) / 2 * (edges.top ? -1 : edges.bottom ? 1 : 0);
   return {
@@ -27,11 +27,11 @@ export function resizeRect(rect: WindowRect, edges: ResizeEdges, dx: number, dy:
   };
 }
 
-export function fitRect(rect: WindowRect, viewportWidth: number, viewportHeight: number): void {
+export function fitRect(rect: WindowRect, viewportWidth: number, viewportHeight: number, minWidth = 220, minHeight = 120): void {
   const centerX = rect.x + rect.width / 2;
   const centerY = rect.y + rect.height / 2;
-  rect.width = clamp(rect.width, Math.min(220, viewportWidth), viewportWidth);
-  rect.height = clamp(rect.height, Math.min(120, viewportHeight), viewportHeight);
+  rect.width = clamp(rect.width, Math.min(minWidth, viewportWidth), viewportWidth);
+  rect.height = clamp(rect.height, Math.min(minHeight, viewportHeight), viewportHeight);
   const angle = rect.angle * Math.PI / 180;
   const halfWidth = (Math.abs(Math.cos(angle)) * rect.width + Math.abs(Math.sin(angle)) * rect.height) / 2;
   const halfHeight = (Math.abs(Math.sin(angle)) * rect.width + Math.abs(Math.cos(angle)) * rect.height) / 2;

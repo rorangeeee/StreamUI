@@ -7,6 +7,13 @@ export interface ChatEntry {
   body: string;
 }
 
+/** Display the normalized sending timestamp in the viewer's local timezone. */
+export function formatChatTimestamp(timestamp: number): string {
+  const date = new Date(timestamp);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 const text = (value: unknown): string => typeof value === 'string' ? value.replace(/[\r\n\t\u0000-\u001f\u007f]+/g, ' ').trim() : '';
 const number = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const record = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;

@@ -1,121 +1,70 @@
-export type AudioState = 'idle' | 'requesting' | 'live' | 'error' | 'unsupported';
+import { decodeAudioFrame } from './audio-protocol.ts';
+import type { AudioFrame } from './audio-protocol.ts';
+import { host, socketUrl } from './host-client.ts';
+export type { AudioFrame } from './audio-protocol.ts';
+export type AudioState = 'idle' | 'requesting' | 'live' | 'error';
 
-export interface AudioFrame {
-  frequency: Float32Array<ArrayBuffer>;
-  waveform: Float32Array<ArrayBuffer>;
-  sampleRate: number;
-}
-
-/** Captures locally. The graph is never connected to the speakers. */
-export class SystemAudio extends EventTarget {
+/** Receives host analysis frames. No browser capture, audio permission, or playback is needed. */
+export class HostAudio extends EventTarget {
   state: AudioState = 'idle';
   error: string | null = null;
-  private stream: MediaStream | null = null;
-  private context: AudioContext | null = null;
-  private source: MediaStreamAudioSourceNode | null = null;
-  private analyser: AnalyserNode | null = null;
   private frame: AudioFrame | null = null;
-  private operation = 0;
-
-  constructor() {
-    super();
-    if (!navigator.mediaDevices?.getDisplayMedia || !window.AudioContext) {
-      this.state = 'unsupported';
-      this.error = '当前浏览器不支持系统音频共享，请使用桌面版 Chrome 或 Edge。';
-    }
+  private socket: WebSocket | null = null;
+  private retry: ReturnType<typeof setTimeout> | null = null;
+  private watchdog: ReturnType<typeof setInterval> | null = null;
+  private lastFrame = 0;
+  private active = false;
+  private stateChanged = () => {
+    if (!host.state) return;
+    if (host.state?.audio.state === 'error') this.setState('error', host.state.audio.error);
+    else if (!host.state?.config.audio.enabled) { this.frame = null; this.setState('idle'); }
+    else if (host.state.audio.state !== 'live') this.setState('requesting');
+  };
+  start(): void {
+    if (this.active) return;
+    this.active = true;
+    host.addEventListener('state', this.stateChanged);
+    host.start(); this.connect();
+    this.watchdog = setInterval(() => {
+      if (this.state === 'live' && Date.now() - this.lastFrame > 2000) {
+        this.frame = null; this.setState('requesting', '等待 host 音频数据…');
+        this.socket?.close();
+      }
+    }, 1000);
   }
-
-  async start(): Promise<void> {
-    if (this.state === 'requesting' || this.state === 'live' || this.state === 'unsupported') return;
-    const operation = ++this.operation;
-    this.error = null;
+  private connect(): void {
+    if (!this.active || this.socket) return;
     this.setState('requesting');
-
-    try {
-      const options: DisplayMediaStreamOptions & { systemAudio: string; selfBrowserSurface: string; surfaceSwitching: string } = {
-        video: { displaySurface: 'monitor', frameRate: 1 },
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-        systemAudio: 'include',
-        selfBrowserSurface: 'exclude',
-        surfaceSwitching: 'exclude',
-      };
-      const stream = await navigator.mediaDevices.getDisplayMedia(options);
-      if (operation !== this.operation) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-
-      this.stream = stream;
-      const audioTracks = stream.getAudioTracks().filter((track) => track.readyState === 'live');
-      if (!audioTracks.length) throw new Error('未共享音频，请重新选择整个屏幕并启用系统音频共享。');
-
-      stream.getTracks().forEach((track) => track.addEventListener('ended', () => {
-        if (this.stream === stream) this.stop();
-      }, { once: true }));
-
-      const context = new AudioContext({ latencyHint: 'interactive' });
-      this.context = context;
-      this.source = context.createMediaStreamSource(new MediaStream(audioTracks));
-      this.analyser = context.createAnalyser();
-      this.analyser.fftSize = 8192;
-      this.analyser.smoothingTimeConstant = 0.72;
-      this.analyser.minDecibels = -95;
-      this.analyser.maxDecibels = -18;
-      this.source.connect(this.analyser);
-      this.frame = {
-        frequency: new Float32Array(this.analyser.frequencyBinCount),
-        waveform: new Float32Array(this.analyser.fftSize),
-        sampleRate: context.sampleRate,
-      };
-      await context.resume();
-      if (operation !== this.operation) return;
-      // A track can end while the audio context is resuming.
-      if (audioTracks.some((track) => track.readyState === 'ended')) {
-        this.stop();
-        return;
-      }
-      this.setState('live');
-    } catch (error) {
-      if (operation !== this.operation) return;
-      this.release();
-      if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError')) {
-        this.setState('idle');
-      } else {
-        this.error = error instanceof Error ? error.message : '系统音频捕获失败。';
-        console.warn('[StreamUI audio]', this.error);
-        this.setState('error');
-      }
-    }
+    const socket = new WebSocket(socketUrl('/ws/audio'));
+    socket.binaryType = 'arraybuffer'; this.socket = socket;
+    socket.onopen = this.stateChanged;
+    socket.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+      if (!(event.data instanceof ArrayBuffer)) return;
+      const frame = decodeAudioFrame(event.data);
+      if (!frame) return;
+      this.frame = frame; this.lastFrame = Date.now(); this.setState('live');
+    };
+    socket.onclose = () => {
+      if (this.socket !== socket) return;
+      this.socket = null; this.frame = null;
+      this.setState('requesting', '等待 StreamUI Host 连接…');
+      if (this.active) this.retry = setTimeout(() => { this.retry = null; this.connect(); }, 1500);
+    };
+    socket.onerror = () => socket.close();
   }
-
-  read(): AudioFrame | null {
-    if (this.state !== 'live' || !this.analyser || !this.frame) return null;
-    this.analyser.getFloatFrequencyData(this.frame.frequency);
-    this.analyser.getFloatTimeDomainData(this.frame.waveform);
-    return this.frame;
-  }
-
+  read(): AudioFrame | null { return this.state === 'live' ? this.frame : null; }
   stop(): void {
-    ++this.operation;
-    this.release();
-    this.error = null;
-    this.setState('idle');
+    this.active = false;
+    host.removeEventListener('state', this.stateChanged);
+    if (this.retry) clearTimeout(this.retry);
+    if (this.watchdog) clearInterval(this.watchdog);
+    this.retry = this.watchdog = null;
+    const socket = this.socket; this.socket = null; socket?.close();
+    this.frame = null; this.setState('idle');
   }
-
-  private release(): void {
-    this.source?.disconnect();
-    this.analyser?.disconnect();
-    this.stream?.getTracks().forEach((track) => track.stop());
-    if (this.context && this.context.state !== 'closed') void this.context.close().catch(() => {});
-    this.source = null;
-    this.analyser = null;
-    this.context = null;
-    this.stream = null;
-    this.frame = null;
-  }
-
-  private setState(state: AudioState): void {
-    this.state = state;
+  private setState(state: AudioState, error: string | null = null): void {
+    if (this.state === state && this.error === error) return;
+    this.state = state; this.error = error;
     this.dispatchEvent(new Event('statechange'));
   }
 }

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111111" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>StreamUI · 控制台</title>
+  </head>
+  <body>
+    <div class="console">
+      <header class="topbar">
+        <a class="brand" href="/"><span class="brand-mark">S</span><span>StreamUI <small>HOST CONTROL</small></span></a>
+        <div class="connection"><span class="status-dot" id="host-dot"></span><span id="host-status">正在连接 host</span></div>
+        <button class="button quiet" id="open-obs" type="button">打开 OBS 画面 <span aria-hidden="true">↗</span></button>
+      </header>
+      <nav class="tabs" role="tablist" aria-label="控制台页面">
+        <button id="tab-preview" role="tab" aria-selected="true" aria-controls="panel-stage" data-tab="preview">预览</button>
+        <button id="tab-layout" role="tab" aria-selected="false" aria-controls="panel-stage" data-tab="layout" tabindex="-1">布局移动</button>
+        <button id="tab-settings" role="tab" aria-selected="false" aria-controls="panel-settings" data-tab="settings" tabindex="-1">配置</button>
+        <span class="tabs-caption">LOCAL BROADCAST WORKSPACE</span>
+      </nav>
+      <main>
+        <section id="panel-stage" role="tabpanel" aria-labelledby="tab-preview">
+          <div class="section-heading"><div><p class="eyebrow" id="stage-eyebrow">LIVE OUTPUT</p><h1 id="stage-title">直播画面预览</h1><p id="stage-description">与 OBS 浏览器源使用同一画面，音频和布局由 host 同步。</p></div><button class="button quiet" id="reset-layout" type="button" hidden>恢复默认布局</button></div>
+          <div class="layout-controls"><label for="layout-mode">直播布局<select id="layout-mode" disabled><option value="21:9">21:9 · 超宽主画面</option><option value="16:9">16:9 · 全画布叠加</option></select></label><small id="layout-mode-detail">两套布局独立保存</small></div>
+          <div class="stage-shell"><div id="stage-viewport"><iframe id="output-frame" title="OBS 实时画面预览" allow="autoplay" tabindex="-1"></iframe></div><div class="stage-footer"><span><span class="live-dot"></span> 实时画面 <span id="canvas-size">3840 × 2160</span></span><span id="layout-status" role="status">由 host 统一管理</span></div></div>
+          <div class="output-address"><div><span class="field-kicker">OBS 浏览器源地址</span><code id="obs-url">正在连接…</code></div><button class="button" id="copy-url" type="button">复制地址</button></div>
+          <p class="stage-hint" id="layout-hint" hidden>拖动移动 · 边缘缩放 · Alt + 拖动旋转 · 右键调整层级与反色。松开后自动保存，并同步到 OBS。</p>
+        </section>
+        <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+          <div class="section-heading"><div><p class="eyebrow">HOST SETTINGS</p><h1>配置采集与连接</h1><p>设置保存在本机，关闭此页面后 host 继续工作。</p></div></div>
+          <form id="settings-form">
+            <div class="settings-grid">
+              <section class="card host-card"><div class="card-heading"><span class="card-number">OBS</span><h2>场景自动切换布局</h2><span class="pill" id="obs-scene-status">未启用</span></div>
+                <div class="obs-fields"><label class="field">OBS WebSocket 地址<input id="obs-websocket-url" type="url" value="ws://127.0.0.1:4455" spellcheck="false" required /></label><label class="field">OBS WebSocket 密码 <span class="optional">可选</span><input id="obs-websocket-password" type="password" autocomplete="off" /></label>
+                <label class="field">21:9 场景名称<input id="obs-scene-21" type="text" maxlength="256" placeholder="留空则不自动切换到 21:9" /></label><label class="field">16:9 场景名称<input id="obs-scene-16" type="text" maxlength="256" placeholder="留空则不自动切换到 16:9" /></label></div>
+                <p class="help">在 OBS 的「工具 → WebSocket 服务器设置」中启用服务并填写地址、密码。场景名称精确匹配；任一名称留空，则不自动切换到该布局。其他场景保持当前布局。监听实际输出场景，工作室模式的预览切换不触发。</p><span id="obs-scene-detail" role="status">配置场景名称后监听 OBS 的实际输出场景。</span>
+              </section>
+              <section class="card host-card"><div class="card-heading"><span class="card-number">Aa</span><h2>中英文标题</h2></div><div class="title-fields"><label class="field">英文标题<textarea id="title-english-lines" rows="3" spellcheck="false">TITLE</textarea></label><label class="field">中文标题<textarea id="title-chinese-lines" rows="3">标题</textarea></label></div><p class="help">每行一段文案，在同一位置按「英文 1 → 中文 1 → 英文 2 → 中文 2」交替，使用纯模糊切换；两边段数不同时各自顺序循环。保存后同步到预览与 OBS。</p></section>
+              <section class="card host-card"><div class="card-heading"><span class="card-number">MP</span><h2>当前曲目</h2><span class="pill" id="now-playing-status">自动读取</span></div><p class="help" id="now-playing-detail">等待播放器提供曲目信息。</p><p class="help">自动读取系统正在播放的歌曲和歌手，显示在频谱图中央。暂停或没有可用曲目时隐藏，无需手动填写。</p></section>
+              <section class="card"><div class="card-heading"><span class="card-number">01</span><h2>桌面音频</h2><span class="pill" id="audio-status">等待连接</span></div>
+                <label class="toggle-row"><span>启用桌面音频采集</span><input id="audio-enabled" type="checkbox" role="switch" checked /></label>
+                <label class="field">输出设备<span class="input-action"><select id="audio-device"><option value="default">跟随 Windows 默认输出</option></select><button class="icon-button" id="refresh-devices" type="button" aria-label="刷新输出设备">↻</button></span></label>
+                <label class="field">音频通道<select id="audio-channel"><option value="-1">混合全部声道</option><option value="0">声道 1 · 左</option><option value="1">声道 2 · 右</option></select></label>
+                <label class="field" for="audio-gain"><span class="range-label">可视化增益 <output id="gain-value">1.00×</output></span><input id="audio-gain" type="range" min="0" max="4" step="0.05" value="1" /></label>
+                <div class="level-row"><span>输入电平</span><meter id="audio-meter" min="0" max="1" value="0" aria-label="桌面音频电平"></meter><code id="audio-level">−∞ dB</code></div>
+                <p class="help" id="audio-detail">由 Windows host 获取正在播放的桌面声音，无需共享屏幕。</p><button class="text-button" id="restart-audio" type="button">重新连接音频</button>
+              </section>
+              <section class="card"><div class="card-heading"><span class="card-number">02</span><h2>LAPLACE 连接</h2><span class="pill" id="laplace-status">等待连接</span></div>
+                <label class="toggle-row"><span>启用弹幕连接</span><input id="laplace-enabled" type="checkbox" role="switch" checked /></label>
+                <label class="field">Event Bridge 地址<input id="laplace-url" type="url" value="ws://localhost:9696" required spellcheck="false" /></label>
+                <label class="field">Token <span class="optional">可选</span><input id="laplace-token" type="password" autocomplete="off" placeholder="与桥接服务保持一致" /></label>
+                <label class="check-row"><input id="laplace-local" type="checkbox" checked /><span>由 host 自动启动本地 Event Bridge</span></label>
+                <p class="help">在 LAPLACE Chat 的 Event Bridge 集成中填写 <code>localhost:9696</code>，Token 与此处一致，并保持采集端运行。</p>
+                <div class="bridge-detail"><span>已接收事件 <strong id="event-count">0</strong></span><span id="laplace-detail">等待连接</span></div><button class="text-button" id="reconnect-laplace" type="button">重新连接 LAPLACE</button>
+              </section>
+              <section class="card host-card"><div class="card-heading"><span class="card-number">03</span><h2>画布与后台</h2></div><div class="host-options"><div class="resolution"><label class="field">画布宽度<input id="canvas-width" type="number" min="640" max="7680" step="1" value="3840" required /></label><span>×</span><label class="field">画布高度<input id="canvas-height" type="number" min="360" max="4320" step="1" value="2160" required /></label></div><div class="startup-option"><label class="check-row"><input id="startup-enabled" type="checkbox" /><span>登录 Windows 后自动启动 host</span></label><p class="help">host 驻留系统托盘。双击托盘图标打开配置页，右键可打开画面或退出。</p></div></div><p class="help">默认使用 SVG 的 3840 × 2160 画布。OBS 浏览器源请填写相同宽高；主画面区域已预留，可在 OBS 中放入视频源。</p></section>
+            </div>
+            <div class="savebar"><span id="save-status" role="status">配置保存在本机</span><button class="button primary" id="save-settings" type="submit">保存并应用</button></div>
+          </form>
+        </section>
+      </main>
+      <footer class="page-footer"><span>StreamUI Host</span><span>WINDOWS · LOCAL ONLY</span></footer>
+    </div>
+    <div id="feedback" class="feedback" role="status" hidden></div>
+    <script type="module" src="/src/config.ts"></script>
+  </body>
+</html>

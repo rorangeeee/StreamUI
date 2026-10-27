@@ -1,83 +1,80 @@
-import { LaplaceEventBridgeClient } from '@laplace.live/event-bridge-sdk';
-import { ChatEventFormatter } from './chat-events.ts';
+import { host } from './host-client.ts';
+import { ChatEventFormatter, formatChatTimestamp } from './chat-events.ts';
 import type { ChatEntry } from './chat-events.ts';
+import { ChatPlayback } from './chat-playback.ts';
 
-const timeFormat = new Intl.DateTimeFormat('zh-CN', {
-  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
-});
-const LINE_INTERVAL = 160;
-const CHARACTER_INTERVAL = 10;
-const MAX_TYPING_DURATION = 1200;
-const HISTORY_LIMIT = 200;
-const graphemeSegmenter = new Intl.Segmenter('zh-CN', { granularity: 'grapheme' });
-
-/** A text-only terminal: each event prints atomically, in three successive lines. */
+/** A single message surface; gifts cover it from left to right before text appears. */
 export class ChatTerminal extends HTMLElement {
-  private bridge: LaplaceEventBridgeClient | null = null;
   private formatter = new ChatEventFormatter();
-  private viewport!: HTMLDivElement;
+  private playback = new ChatPlayback();
+  private fill!: HTMLDivElement;
   private output!: HTMLDivElement;
   private cursor!: HTMLSpanElement;
-  private queue: ChatEntry[] = [];
+  private article: HTMLElement | null = null;
+  private bodyScroller: HTMLElement | null = null;
+  private lines: Text[] = [];
+  private current: ChatEntry | null = null;
   private seen = new Set<string>();
-  private timer: ReturnType<typeof setTimeout> | null = null;
-  private printing = false;
-  private unsubscribe: (() => void)[] = [];
-  private hide = () => this.disconnectBridge();
-  private show = () => this.connectBridge();
+  private subscribed = false;
+  private animation = 0;
+  private previousTime = 0;
+  private fillSignature = '';
+  private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  private onChat = (event: Event) => this.receive((event as CustomEvent).detail);
+  private onState = () => {
+    const connected = host.connected && host.state?.laplace.state === 'connected';
+    this.dataset.connection = connected ? 'connected' : 'disconnected';
+    this.setAttribute('aria-label', connected ? '单条弹幕，已连接' : '单条弹幕，等待连接');
+  };
+  private hide = () => { this.disconnectBridge(); this.pause(); };
+  private show = () => { this.connectBridge(); this.sync(); };
+  private sync = () => {
+    this.pause();
+    this.playback.reducedMotion = this.reducedMotion.matches;
+    this.playback.advance(0); this.render();
+    if (this.isConnected && !document.hidden && !this.playback.settled) this.animation = requestAnimationFrame(this.tick);
+  };
+  private tick = (time: number) => {
+    this.animation = 0;
+    if (this.previousTime) this.playback.advance(Math.min(250, Math.max(0, time - this.previousTime)));
+    this.previousTime = time; this.render();
+    if (!this.playback.settled) this.animation = requestAnimationFrame(this.tick);
+    else this.previousTime = 0;
+  };
 
   connectedCallback(): void {
-    if (!this.viewport) {
-      this.viewport = document.createElement('div');
-      this.viewport.className = 'terminal-viewport';
-      this.output = document.createElement('div');
-      this.output.className = 'terminal-output';
-      this.output.setAttribute('role', 'log');
-      this.output.setAttribute('aria-live', 'polite');
-      this.output.setAttribute('aria-label', '直播弹幕');
-      this.cursor = document.createElement('span');
-      this.cursor.className = 'terminal-cursor';
-      this.cursor.setAttribute('aria-hidden', 'true');
-      this.output.append(this.cursor);
-      this.viewport.append(this.output);
-      this.replaceChildren(this.viewport);
+    if (!this.output) {
+      this.fill = document.createElement('div'); this.fill.className = 'terminal-fill'; this.fill.setAttribute('aria-hidden', 'true');
+      this.output = document.createElement('div'); this.output.className = 'terminal-output';
+      this.output.setAttribute('role', 'log'); this.output.setAttribute('aria-live', 'polite');
+      this.output.setAttribute('aria-atomic', 'true');
+      this.cursor = document.createElement('span'); this.cursor.className = 'terminal-cursor'; this.cursor.setAttribute('aria-hidden', 'true');
+      this.output.append(this.cursor); this.replaceChildren(this.fill, this.output);
     }
-    window.addEventListener('pagehide', this.hide);
-    window.addEventListener('pageshow', this.show);
-    this.connectBridge();
+    window.addEventListener('pagehide', this.hide); window.addEventListener('pageshow', this.show);
+    document.addEventListener('visibilitychange', this.sync); this.reducedMotion.addEventListener('change', this.sync);
+    this.connectBridge(); this.sync();
   }
 
   disconnectedCallback(): void {
-    window.removeEventListener('pagehide', this.hide);
-    window.removeEventListener('pageshow', this.show);
-    this.disconnectBridge();
-    if (this.timer !== null) clearTimeout(this.timer);
-    this.timer = null;
-    this.printing = false;
-    this.queue = [];
+    window.removeEventListener('pagehide', this.hide); window.removeEventListener('pageshow', this.show);
+    document.removeEventListener('visibilitychange', this.sync); this.reducedMotion.removeEventListener('change', this.sync);
+    this.disconnectBridge(); this.pause(); this.playback.clear();
   }
 
+  private pause(): void {
+    cancelAnimationFrame(this.animation); this.animation = 0; this.previousTime = 0;
+  }
   private connectBridge(): void {
-    if (this.bridge) return;
-    this.bridge = new LaplaceEventBridgeClient({ url: 'ws://localhost:9696' });
-    this.unsubscribe = [
-      this.bridge.onAny((event) => this.receive(event)),
-      this.bridge.onConnectionStateChange((state) => {
-        this.dataset.connection = state;
-        this.setAttribute('aria-label', state === 'connected' ? '弹幕终端，已连接' : '弹幕终端，等待连接');
-      }),
-    ];
-    // The SDK keeps reconnecting if the bridge starts after this page.
-    void this.bridge.connect().catch(() => {});
+    if (this.subscribed) return;
+    this.subscribed = true; host.addEventListener('chat', this.onChat);
+    host.addEventListener('state', this.onState); host.addEventListener('connectionchange', this.onState);
+    host.start(); this.onState();
   }
-
   private disconnectBridge(): void {
-    this.unsubscribe.forEach((off) => off());
-    this.unsubscribe = [];
-    this.bridge?.disconnect();
-    this.bridge = null;
+    host.removeEventListener('chat', this.onChat); host.removeEventListener('state', this.onState);
+    host.removeEventListener('connectionchange', this.onState); this.subscribed = false;
   }
-
   private receive(event: unknown): void {
     const entry = this.formatter.format(event);
     if (!entry || (entry.key && this.seen.has(entry.key))) return;
@@ -85,90 +82,50 @@ export class ChatTerminal extends HTMLElement {
       this.seen.add(entry.key);
       if (this.seen.size > 2000) this.seen.delete(this.seen.values().next().value!);
     }
-    this.queue.push(entry);
-    this.printNext();
+    this.playback.enqueue(entry); this.playback.advance(0); this.render();
+    if (!this.animation && !document.hidden) this.sync();
   }
 
-  private printNext(): void {
-    if (this.printing || !this.isConnected) return;
-    const entry = this.queue.shift();
-    if (!entry) return;
-    this.printing = true;
-    const article = document.createElement('article');
-    article.className = 'terminal-entry';
-    article.dataset.kind = entry.kind;
-    article.setAttribute('aria-atomic', 'true');
-    article.setAttribute('aria-busy', 'true');
-    if (entry.key) article.dataset.eventId = entry.key;
-
-    const lines = [
-      `[${timeFormat.format(entry.timestamp)}]`,
-      `${entry.username} · ${entry.level}`,
-      entry.body,
-    ];
-    const classes = ['terminal-time', 'terminal-user', 'terminal-body'];
-    let index = 0;
-    const printLine = () => {
-      const followTail = this.viewport.scrollHeight - this.viewport.clientHeight - this.viewport.scrollTop < 32;
-      if (index === 0) this.output.append(article);
-      const line = document.createElement(index === 0 ? 'time' : 'div');
-      line.className = `terminal-line ${classes[index]}`;
-      if (line instanceof HTMLTimeElement) line.dateTime = new Date(entry.timestamp).toISOString();
-      // All upstream text stays text; usernames and messages cannot inject markup.
-      const content = document.createTextNode(index === 2 ? '' : lines[index]);
-      line.append(content, this.cursor);
-      article.append(line);
-      while (this.output.childElementCount > HISTORY_LIMIT) {
-        const oldest = this.output.firstElementChild!;
-        const height = oldest.getBoundingClientRect().height;
-        oldest.remove();
-        if (!followTail) this.viewport.scrollTop -= height;
+  private render(): void {
+    if (!this.output) return;
+    const frame = this.playback.read();
+    if (this.dataset.phase !== frame.phase) {
+      this.dataset.phase = frame.phase;
+      this.output.setAttribute('aria-busy', String(frame.phase === 'typing' || frame.phase === 'cover'));
+    }
+    const fill = frame.fill.toFixed(4);
+    if (this.fillSignature !== fill) { this.fill.style.transform = `scaleX(${fill})`; this.fillSignature = fill; }
+    if (this.current !== frame.entry) {
+      this.current = frame.entry; this.lines = [];
+      if (!frame.entry) { this.article = null; this.bodyScroller = null; this.output.replaceChildren(this.cursor); return; }
+      const entry = frame.entry;
+      this.article = document.createElement('article'); this.article.className = 'terminal-entry';
+      this.article.dataset.kind = entry.kind;
+      if (entry.key) this.article.dataset.eventId = entry.key;
+      if (entry.kind === 'message') {
+        const metadata = document.createElement('header'); metadata.className = 'terminal-meta';
+        const time = document.createElement('time'); time.className = 'terminal-time';
+        time.dateTime = new Date(entry.timestamp).toISOString(); time.textContent = formatChatTimestamp(entry.timestamp);
+        const username = document.createElement('div'); username.className = 'terminal-user';
+        username.textContent = entry.username; username.title = entry.username;
+        metadata.append(time, username); this.article.append(metadata);
       }
-      if (followTail) this.viewport.scrollTop = this.viewport.scrollHeight;
-      if (index === 2) {
-        article.dataset.typing = 'true';
-        this.typeBody(content, entry.body, () => {
-          delete article.dataset.typing;
-          article.setAttribute('aria-busy', 'false');
-          this.printing = false;
-          this.printNext();
-        });
-        return;
-      }
-      index++;
-      this.timer = setTimeout(() => {
-        this.timer = null;
-        printLine();
-      }, this.lineInterval());
-    };
-    printLine();
-  }
-
-  private lineInterval(): number {
-    return Math.max(32, LINE_INTERVAL / (1 + Math.floor(this.queue.length / 6)));
-  }
-
-  private typeBody(content: Text, body: string, done: () => void): void {
-    // A grapheme keeps emoji, combining accents and ZWJ sequences intact.
-    const characters = Array.from(graphemeSegmenter.segment(body), (part) => part.segment);
-    const interval = Math.min(CHARACTER_INTERVAL, MAX_TYPING_DURATION / characters.length);
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const started = performance.now();
-    let printed = 0;
-    const type = () => {
-      const speed = 1 + Math.floor(this.queue.length / 6);
-      const next = reducedMotion ? characters.length : Math.min(characters.length, Math.max(1, Math.floor((performance.now() - started) * speed / interval)));
-      const followTail = this.viewport.scrollHeight - this.viewport.clientHeight - this.viewport.scrollTop < 32;
-      content.appendData(characters.slice(printed, next).join(''));
-      printed = next;
-      if (followTail) this.viewport.scrollTop = this.viewport.scrollHeight;
-      this.timer = setTimeout(() => {
-        this.timer = null;
-        if (printed < characters.length) type();
-        else done();
-      }, printed < characters.length ? 16 : this.lineInterval());
-    };
-    type();
+      this.lines = frame.lines.map((_, index) => {
+        const element = document.createElement('div');
+        element.className = `terminal-line ${entry.kind !== 'message' && index === 0 ? 'terminal-user' : 'terminal-body'}`;
+        const text = document.createTextNode(''); element.append(text); this.article!.append(element); return text;
+      });
+      this.article.lastElementChild!.append(this.cursor);
+      this.bodyScroller = this.article.querySelector('.terminal-body');
+      this.output.replaceChildren(this.article); this.output.scrollTop = 0;
+    }
+    if (this.article) this.article.dataset.typing = String(frame.phase === 'typing');
+    let changed = false;
+    this.lines.forEach((text, index) => {
+      if (text.data !== frame.lines[index]) { text.data = frame.lines[index]; changed = true; }
+    });
+    // Only the body scrolls, so the sender and sending date remain readable.
+    if (changed && this.bodyScroller) this.bodyScroller.scrollTop = this.bodyScroller.scrollHeight;
   }
 }
 

@@ -1,11 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { easeInOut, hexRgb, inverseRgb, mixRgb, sampleWordmark, WORDMARK_CYCLE, WORDMARK_HIGHLIGHT_WIDTH_RATIO, WORDMARK_MAX_BLUR, WORDMARK_MAX_GLYPH_STRETCH, WORDMARK_MIN_SPACING, WORDMARK_STEP, WORDMARK_TIMING, WORDMARKS } from '../src/wordmark-motion.ts';
+import { easeInOut, hexRgb, inverseRgb, mixRgb, sampleWordmark, TITLE_MIN_SPACING, TITLE_STEP, TITLE_TIMING, WORDMARK_CYCLE, WORDMARK_HIGHLIGHT_WIDTH_RATIO, WORDMARK_MAX_BLUR, WORDMARK_MAX_GLYPH_STRETCH, WORDMARK_MIN_SPACING, WORDMARK_STEP, WORDMARK_TIMING, WORDMARKS } from '../src/wordmark-motion.ts';
 
-test('the wordmark loops LATENITE → NOIZ BOIZ → LATENITE', () => {
-  assert.deepEqual(WORDMARKS, ['LATENITE', 'NOIZ BOIZ']);
-  assert.deepEqual([0, 1, 2, 3].map(step => sampleWordmark(step * WORDMARK_STEP).from), [0, 1, 0, 1]);
+test('the brand loops LATENITE → NOIZBOIZ → HOPEFINDERS → BASSKARYOTES', () => {
+  assert.deepEqual(WORDMARKS, ['LATENITE', 'NOIZBOIZ', 'HOPEFINDERS', 'BASSKARYOTES']);
+  assert.deepEqual([0, 1, 2, 3, 4, 5].map(step => sampleWordmark(step * WORDMARK_STEP).from), [0, 1, 2, 3, 0, 1]);
   assert.equal(sampleWordmark(WORDMARK_CYCLE - 1).to, 0);
+});
+
+test('independent title lists loop correctly without being reset by the four-word brand cycle', () => {
+  const title = time => sampleWordmark(time, 3, TITLE_MIN_SPACING, TITLE_TIMING);
+  assert.deepEqual([0, 1, 2, 3, 4, 5].map(step => title(step * TITLE_STEP).from), [0, 1, 2, 0, 1, 2]);
+  assert.equal(TITLE_STEP, WORDMARK_STEP * 2.5);
+  assert.equal(title(6800).phase, 'hold');
+  assert.equal(TITLE_TIMING.transition, WORDMARK_TIMING.transition);
+  for (let elapsed = 0; elapsed <= WORDMARK_TIMING.transition; elapsed += 16) {
+    assert.equal(title(TITLE_TIMING.hold + elapsed).blurX, sampleWordmark(WORDMARK_TIMING.hold + elapsed).blurX);
+  }
+  assert.equal(sampleWordmark(WORDMARK_TIMING.hold + WORDMARK_TIMING.transition / 2, 1).blurX, 48);
+  assert.equal(sampleWordmark(WORDMARK_STEP * 20, 1).from, 0);
+  assert.equal(WORDMARK_TIMING.hold, 1800);
+  assert.equal(WORDMARK_TIMING.transition, 1600);
+  assert.equal(WORDMARK_MAX_GLYPH_STRETCH, 9);
 });
 
 test('one complete transition eases from rest to rest, without reversing or overshooting', () => {

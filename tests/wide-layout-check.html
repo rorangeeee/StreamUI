@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>StreamUI 16:9 layout verification</title>
+<style>
+*{box-sizing:border-box}html{color-scheme:dark}body{margin:0;background:#111;color:#eee;font:14px system-ui}header{padding:16px;display:flex;gap:12px;align-items:center}button{padding:9px 15px;background:#292929;color:#fff;border:1px solid #555;cursor:pointer}#surface{position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;background:linear-gradient(125deg,#edf2f0 0%,#d2b899 28%,#4c6b7b 48%,#1e2732 66%,#070b13 100%)}#surface:before{content:'TEST VIDEO BACKGROUND · 明暗对比测试';position:absolute;left:15%;top:40%;font:700 5vw system-ui;color:#fff5;max-width:65%;line-height:1.4}iframe{position:absolute;inset:0;width:100%;height:100%;border:0}pre{white-space:pre-wrap;padding:20px;margin:0;font-size:13px}body[data-preview=true] header,body[data-preview=true] pre{display:none}
+</style>
+<header><button id="run">运行布局检查</button><button id="chat">显示测试弹幕</button><button id="gift">显示测试礼物</button><button id="preview">仅显示预览</button><span>隔离测试 · 背景模拟 OBS 下层视频</span></header>
+<div id="surface"><iframe id="stage" src="/display.html"></iframe></div><pre id="results">等待运行</pre>
+<script type="module">
+const iframe=document.querySelector('#stage'), output=document.querySelector('#results');
+const doc=()=>iframe.contentDocument, win=()=>iframe.contentWindow;
+const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const api=async(path,body)=>{const response=await fetch(path,{method:'PUT',headers:{'Content-Type':'application/json','X-StreamUI-Request':'1'},body:JSON.stringify(body)});if(!response.ok)throw Error(await response.text());return response.headers.get('content-type')?.includes('application/json')?response.json():null};
+async function mode(value){await api('/api/layout-mode',{mode:value});for(let i=0;i<60;i++){if(doc()?.querySelector('#workspace')?.dataset.layoutMode===value){await delay(100);return}await delay(50)}throw Error('布局同步超时')}
+let sequence=0;
+function receive(type){const terminal=doc().querySelector('chat-terminal');terminal.receive({type,id:`wide-qa-${++sequence}`,origin:'local-wide-check',username:'测试用户 WHEN',message:'这是一条覆盖在视频上的白色弹幕。Perspective CHAT — 保留阴影与表情 🎧',giftName:'小花花',timestamp:Date.now()})}
+document.querySelector('#chat').onclick=()=>receive('message');document.querySelector('#gift').onclick=()=>receive('gift');
+document.querySelector('#preview').onclick=()=>{
+  for(const wordmark of doc().querySelectorAll('kinetic-wordmark')){wordmark.constructor.playing.delete(wordmark);wordmark.render(0)}
+  for(const animation of doc().getAnimations())animation.pause();
+  doc().querySelector('now-playing').update({title:'夜行 LATENITE',artist:'When',playing:true,state:'playing'});
+  document.body.dataset.preview='true';
+};
+document.querySelector('#run').onclick=async()=>{
+const passed=[];const check=(value,name)=>{if(!value)throw Error(name);passed.push('PASS '+name)};const style=e=>win().getComputedStyle(e);
+try{
+await mode('21:9');await api('/api/layout',{mode:'21:9',layout:null});await api('/api/layout',{mode:'16:9',layout:null});await delay(200);
+const title=doc().querySelector('#bilingual-title'),brand=doc().querySelector('.brand-wordmark'),terminal=doc().querySelector('chat-terminal'),track=doc().querySelector('now-playing'),barcode=doc().querySelector('barcode-code');
+check(style(doc().querySelector('.stage-backdrop')).display!=='none','21:9 keeps its opaque surround and transparent aperture');
+check(track.parentElement.id==='spectrogram-window','21:9 NOW PLAYING stays in its existing host');
+await mode('16:9');await doc().fonts.ready;
+for(const selector of ['.stage-backdrop','.stage-dividers','#spectrogram-window','#waveform-window','stream-metadata'])check(style(doc().querySelector(selector)).display==='none',selector+' hidden only in 16:9');
+check(style(doc().querySelector('#chat-window')).backgroundColor==='rgba(0, 0, 0, 0)','CHAT background stays transparent');
+check(style(terminal).color==='rgb(255, 255, 255)'&&Number(style(terminal).fontWeight)>=500,'CHAT uses heavier white text');
+check(style(doc().querySelector('.chat-projection')).transform.startsWith('matrix3d'),'frame, label and text share a perspective plane');
+const first=new (win().DOMMatrix)(style(doc().querySelector('.chat-lift')).transform);await delay(250);const second=new (win().DOMMatrix)(style(doc().querySelector('.chat-lift')).transform);
+check(first.m42===0&&second.m42===0&&Math.abs(first.m43-second.m43)>.01,'CHAT floats in 3D depth without translating on canvas Y');
+check(track.parentElement.id==='workspace'&&track.classList.contains('wide-now-playing'),'existing NOW PLAYING instance moves above the footer');
+check(style(title).filter.includes('drop-shadow')&&style(doc().querySelector('stream-marquee')).filter.includes('drop-shadow'),'title and footer use hard shadows');
+check(doc().querySelector('#bilingual-title')===title&&doc().querySelector('.brand-wordmark')===brand&&doc().querySelector('chat-terminal')===terminal&&doc().querySelector('barcode-code')===barcode,'all live animated component instances survive switching');
+receive('message');await delay(1800);
+check(style(doc().querySelector('.terminal-line')).textShadow.includes('3px 3px 0px'),'chat shadow is hard edged');
+track.update({title:'夜行 LATENITE',artist:'When',playing:true,state:'playing'});
+await mode('21:9');check(doc().querySelector('now-playing')===track&&track.parentElement.id==='spectrogram-window','returning to 21:9 restores the same track component');
+check(style(doc().querySelector('stream-metadata')).display!=='none','21:9 information terminal is restored');
+await mode('16:9');receive('message');track.update({title:'夜行 LATENITE',artist:'When',playing:true,state:'playing'});
+output.textContent=passed.join('\n')+'\n'+passed.length+' checks passed';
+}catch(error){output.textContent=passed.join('\n')+'\nFAIL '+error.message}
+};
+</script></html>

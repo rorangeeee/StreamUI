@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ChatEventFormatter } from '../src/chat-events.ts';
+import { ChatEventFormatter, formatChatTimestamp } from '../src/chat-events.ts';
+
+test('chat displays the original sending date and time with padded local fields', () => {
+  const timestamp = new Date(2026, 9, 26, 2, 3, 4).getTime();
+  assert.equal(formatChatTimestamp(timestamp), '2026-10-26 02:03:04');
+});
 
 const base = { origin: 526038, uid: 42, username: '测试观众', timestampNormalized: 1792670400123, id: 'event-1' };
 

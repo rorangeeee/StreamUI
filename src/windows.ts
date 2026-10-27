@@ -1,12 +1,14 @@
 import interact from 'interactjs';
 import { clamp, fitRect, localPoint, normalizeAngle, resizeRect } from './window-geometry.ts';
-import type { WindowRect } from './window-geometry.ts';
-
-interface WindowState extends WindowRect { inverted: boolean }
-interface SavedLayout { order: string[]; windows: Record<string, WindowState> }
+import { parseLayout } from './layout.ts';
+import type { SavedLayout, WindowState } from './layout.ts';
+import { defaultStageLayout } from './stage-layout.ts';
+import type { StageMode } from './stage-layout.ts';
+import { stageDividerPaths } from './stage-dividers.ts';
 const STORAGE_KEY = 'stream-ui:audio-layout';
 
 export class WindowManager {
+  mode: StageMode = '21:9';
   private panels: HTMLElement[];
   private rects = new Map<HTMLElement, WindowState>();
   private order: HTMLElement[];
@@ -15,16 +17,19 @@ export class WindowManager {
   private defaultLayout = true;
   private rotation: { panel: HTMLElement; pointerId: number; startX: number; angle: number } | null = null;
 
-  constructor(private workspace: HTMLElement) {
+  constructor(private workspace: HTMLElement, editable = true) {
     this.panels = Array.from(workspace.querySelectorAll<HTMLElement>('.scope-window'));
     this.order = [...this.panels];
     this.menu = document.querySelector<HTMLElement>('#layer-menu')!;
     this.reset();
-    this.restore();
+    if (!editable) {
+      this.panels.forEach(panel => panel.tabIndex = -1);
+      return;
+    }
 
     for (const panel of this.panels) {
       panel.addEventListener('pointerdown', (event) => {
-        if (event.button !== 0) return;
+        if (event.button !== 0 || this.fixedPanel(panel)) return;
         this.layer(panel, 'front');
         panel.focus({ preventScroll: true });
         if (!event.altKey) return;
@@ -85,7 +90,9 @@ export class WindowManager {
             },
             move: (event) => {
               if (!resizeStart) return;
-              const rect = resizeRect(resizeStart, event.edges, event.clientX - event.clientX0, event.clientY - event.clientY0);
+              const scale = this.geometryScale();
+              const minWidth = this.mode === '16:9' && panel.id === 'wordmark-window' ? 80 : 220;
+              const rect = resizeRect(resizeStart, event.edges, event.clientX - event.clientX0, event.clientY - event.clientY0, minWidth * scale, 120 * scale);
               this.rects.set(panel, { ...resizeStart, ...rect });
               this.fit(panel);
             },
@@ -93,7 +100,7 @@ export class WindowManager {
           },
         })
         .actionChecker((pointer: PointerEvent, event: Event) => {
-          if ((event as MouseEvent).altKey || this.rotation) return null;
+          if ((event as MouseEvent).altKey || this.rotation || this.fixedPanel(panel)) return null;
           const rect = this.rects.get(panel)!;
           const local = localPoint(rect, pointer.clientX, pointer.clientY);
           const edges = {
@@ -144,33 +151,30 @@ export class WindowManager {
     this.defaultLayout = true;
     this.order = [...this.panels];
     this.closeMenu();
-    const [spectrogram, waveform, chat, wordmark, blurWordmark] = this.panels;
-    if (width <= 760) {
-      const titleHeight = 120;
-      const panelHeight = Math.min(180, Math.max(120, (height - titleHeight * 2 - 80) / 3));
-      this.rects.set(wordmark, { x: 16, y: 16, width: width - 32, height: titleHeight, angle: 0, inverted: false });
-      this.rects.set(blurWordmark, { x: 16, y: 28 + titleHeight, width: width - 32, height: titleHeight, angle: 0, inverted: false });
-      this.rects.set(spectrogram, { x: 16, y: 40 + titleHeight * 2, width: width - 32, height: panelHeight, angle: 0, inverted: false });
-      this.rects.set(waveform, { x: 16, y: 52 + titleHeight * 2 + panelHeight, width: width - 32, height: panelHeight, angle: 0, inverted: false });
-      this.rects.set(chat, { x: 16, y: 64 + titleHeight * 2 + panelHeight * 2, width: width - 32, height: height - 80 - titleHeight * 2 - panelHeight * 2, angle: 0, inverted: false });
-    } else {
-      const margin = clamp(width * .045, 24, 64);
-      const gap = clamp(width * .035, 20, 44);
-      const chatWidth = Math.max(270, width * .31);
-      const leftWidth = width - margin * 2 - gap - chatWidth;
-      const top = height * .08;
-      const titleHeight = clamp(height * .16, 120, 170);
-      const verticalGap = clamp(height * .035, 16, 36);
-      const panelHeight = Math.min(260, height * .22);
-      const spectrumTop = top + (titleHeight + verticalGap) * 2;
-      this.rects.set(wordmark, { x: margin, y: top, width: leftWidth, height: titleHeight, angle: 0, inverted: false });
-      this.rects.set(blurWordmark, { x: margin, y: top + titleHeight + verticalGap, width: leftWidth, height: titleHeight, angle: 0, inverted: false });
-      this.rects.set(spectrogram, { x: margin, y: spectrumTop, width: leftWidth, height: panelHeight, angle: 0, inverted: false });
-      this.rects.set(waveform, { x: margin + leftWidth * .12, y: spectrumTop + panelHeight + verticalGap, width: leftWidth * .87, height: Math.min(220, height * .17), angle: 0, inverted: false });
-      this.rects.set(chat, { x: width - margin - chatWidth, y: top, width: chatWidth, height: height * .80, angle: 0, inverted: false });
+    const layout = defaultStageLayout(this.mode);
+    for (const panel of this.panels) {
+      const rect = layout.windows[panel.id];
+      this.rects.set(panel, { ...rect, x: rect.x * width, y: rect.y * height, width: rect.width * width, height: rect.height * height });
     }
     this.panels.forEach((panel) => this.fit(panel));
     this.applyLayers();
+  }
+
+  setMode(mode: StageMode): void {
+    if (this.mode === mode) return;
+    interact.stop();
+    if (this.rotation) {
+      const { panel, pointerId } = this.rotation;
+      this.rotation = null;
+      if (panel.hasPointerCapture(pointerId)) panel.releasePointerCapture(pointerId);
+    }
+    this.panels.forEach(panel => panel.classList.remove('is-interacting', 'is-rotating'));
+    this.mode = mode;
+    this.closeMenu();
+  }
+
+  private fixedPanel(panel: HTMLElement): boolean {
+    return this.mode === '16:9' && ['stream-window', 'spectrogram-window', 'waveform-window'].includes(panel.id);
   }
 
   private begin(panel: HTMLElement): void {
@@ -188,14 +192,38 @@ export class WindowManager {
   private apply(panel: HTMLElement): void {
     const rect = this.rects.get(panel)!;
     Object.assign(panel.style, { width: `${rect.width}px`, height: `${rect.height}px`, transform: `translate(${rect.x}px, ${rect.y}px) rotate(${rect.angle}deg)` });
+    panel.style.setProperty('--panel-width', `${rect.width}px`);
+    panel.style.setProperty('--panel-height', `${rect.height}px`);
+    if (panel.id === 'stream-window') {
+      // The transparent aperture follows the saved panel geometry.
+      this.workspace.querySelector('.stage-backdrop')!.setAttribute('viewBox', `0 0 ${this.workspace.clientWidth} ${this.workspace.clientHeight}`);
+      const cutout = this.workspace.querySelector('#stream-cutout')!;
+      for (const [key, value] of Object.entries({ x: rect.x, y: rect.y, width: rect.width, height: rect.height, transform: `rotate(${rect.angle} ${rect.x + rect.width / 2} ${rect.y + rect.height / 2})` })) cutout.setAttribute(key, String(value));
+    }
     panel.dataset.inverted = String(rect.inverted);
-    panel.querySelector('audio-scope, kinetic-wordmark')?.toggleAttribute('inverted', rect.inverted);
+    panel.querySelectorAll('audio-scope, kinetic-wordmark').forEach(element => element.toggleAttribute('inverted', rect.inverted));
+    if (['stream-window', 'spectrogram-window', 'waveform-window'].includes(panel.id)) this.updateDividers();
+  }
+
+  private updateDividers(): void {
+    const svg = this.workspace.querySelector<SVGSVGElement>('.stage-dividers');
+    if (!svg) return;
+    const rect = (id: string) => this.rects.get(this.panels.find(panel => panel.id === id)!)!;
+    const paths = stageDividerPaths(rect('stream-window'), rect('spectrogram-window'), rect('waveform-window'));
+    svg.setAttribute('viewBox', `0 0 ${this.workspace.clientWidth} ${this.workspace.clientHeight}`);
+    for (const [name, path] of Object.entries(paths)) svg.querySelector(`[data-divider="${name}"]`)!.setAttribute('d', path);
   }
 
   private fit(panel: HTMLElement): void {
     const rect = this.rects.get(panel)!;
-    fitRect(rect, this.workspace.clientWidth, this.workspace.clientHeight);
+    if (this.mode === '16:9' && panel.id === 'stream-window') Object.assign(rect, { x: 0, y: 0, width: this.workspace.clientWidth, height: this.workspace.clientHeight, angle: 0 });
+    const scale = this.geometryScale();
+    fitRect(rect, this.workspace.clientWidth, this.workspace.clientHeight, 80 * scale, 40 * scale);
     this.apply(panel);
+  }
+
+  private geometryScale(): number {
+    return this.mode === '16:9' ? Math.min(this.workspace.clientWidth / 3840, this.workspace.clientHeight / 2160) : 1;
   }
 
   private layer(panel: HTMLElement, action: string): void {
@@ -243,6 +271,7 @@ export class WindowManager {
   }
 
   private onKey(panel: HTMLElement, event: KeyboardEvent): void {
+    if (this.fixedPanel(panel)) return;
     if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
       event.preventDefault();
       const rect = panel.getBoundingClientRect();
@@ -263,7 +292,7 @@ export class WindowManager {
     this.save();
   }
 
-  private save(): void {
+  save(): void {
     const width = this.workspace.clientWidth;
     const height = this.workspace.clientHeight;
     const layout: SavedLayout = { order: this.order.map((panel) => panel.id), windows: {} };
@@ -271,13 +300,15 @@ export class WindowManager {
       const rect = this.rects.get(panel)!;
       layout.windows[panel.id] = { x: rect.x / width, y: rect.y / height, width: rect.width / width, height: rect.height / height, angle: rect.angle, inverted: rect.inverted };
     }
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(layout)); } catch { /* Storage is optional. */ }
+    try { localStorage.setItem(`${STORAGE_KEY}:${this.mode}`, JSON.stringify(layout)); } catch { /* Storage is optional. */ }
+    this.workspace.dispatchEvent(new CustomEvent('layoutchange', { detail: layout }));
   }
 
-  private restore(): void {
+  restore(input: unknown): void {
     try {
-      const layout: SavedLayout = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
-      if (!layout || !Array.isArray(layout.order) || layout.order.length !== this.panels.length || new Set(layout.order).size !== this.panels.length) return;
+      if (input === null) { this.reset(); return; }
+      const layout = parseLayout(input, this.panels.map(panel => panel.id));
+      if (!layout || !Array.isArray(layout.order) || layout.order.length !== this.panels.length || new Set(layout.order).size !== this.panels.length) { this.reset(); return; }
       const restoredOrder = layout.order.map((id) => this.panels.find((panel) => panel.id === id));
       if (restoredOrder.some((panel) => !panel)) return;
       const nextRects = new Map(this.rects);

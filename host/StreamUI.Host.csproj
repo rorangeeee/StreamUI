@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>StreamUI.Host</AssemblyName>
+    <Product>StreamUI Host</Product>
+    <Title>StreamUI Host</Title>
+    <ApplicationIcon>Assets/StreamUI.ico</ApplicationIcon>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="../dist/**/*" Link="wwwroot/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="$(IntermediateOutputPath)web-assets.zip" LogicalName="StreamUI.WebAssets.zip" />
+    <EmbeddedResource Include="MediaSession.ps1" LogicalName="StreamUI.MediaSession.ps1" />
+  </ItemGroup>
+  <Target Name="BundleWebAssets" BeforeTargets="PrepareResources">
+    <ZipDirectory SourceDirectory="../dist" DestinationFile="$(IntermediateOutputPath)web-assets.zip" Overwrite="true" />
+  </Target>
+</Project>

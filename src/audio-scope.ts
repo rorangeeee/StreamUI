@@ -14,12 +14,14 @@ export class AudioScope extends HTMLElement {
   private column: ImageData | null = null;
   private pendingPixels = 0;
   private lastFrame: AudioFrame | null = null;
+  private foreground = '#40009e';
 
   connectedCallback(): void {
     this.canvas = document.createElement('canvas');
     this.canvas.setAttribute('aria-hidden', 'true');
     this.replaceChildren(this.canvas);
     this.ctx = this.canvas.getContext('2d')!;
+    this.readPalette();
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(this);
   }
@@ -29,7 +31,7 @@ export class AudioScope extends HTMLElement {
   }
 
   attributeChangedCallback(): void {
-    if (this.ctx) this.render(this.lastFrame, 0);
+    if (this.ctx) { this.readPalette(); this.render(this.lastFrame, 0); }
   }
 
   render(frame: AudioFrame | null, elapsed = 1 / 60): void {
@@ -48,8 +50,8 @@ export class AudioScope extends HTMLElement {
     } else this.drawWaveform(frame);
   }
 
-  private get foreground(): string {
-    return getComputedStyle(this).getPropertyValue('--scope-foreground').trim() || '#40009e';
+  private readPalette(): void {
+    this.foreground = getComputedStyle(this).getPropertyValue('--scope-foreground').trim() || '#40009e';
   }
 
   /** A new capture starts a new time history. Stopping retains the last spectrogram. */
@@ -63,6 +65,7 @@ export class AudioScope extends HTMLElement {
     // Canvas resolution follows its local size, independent of the panel's rotation.
     const width = this.clientWidth;
     const height = this.clientHeight;
+    if (!width || !height) return;
     if (this.history.width && this.history.height && width && height) {
       const previous = document.createElement('canvas');
       previous.width = this.history.width;
