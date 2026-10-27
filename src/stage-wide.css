@@ -63,24 +63,8 @@
   width: calc(276.2784px * var(--ui-scale)); height: calc(66.994px * var(--ui-scale));
   transform: none;
 }
-#workspace[data-layout-mode="16:9"] chat-terminal {
-  color: #fff; font-family: 'JetBrains Mono', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  font-weight: 500; font-synthesis: weight;
-}
-#workspace[data-layout-mode="16:9"] chat-terminal::after,
-#workspace[data-layout-mode="16:9"] .terminal-fill { display: none; }
-#workspace[data-layout-mode="16:9"] .terminal-entry { color: #fff; }
-#workspace[data-layout-mode="16:9"] .terminal-line,
-#workspace[data-layout-mode="16:9"] .terminal-time {
-  text-shadow: calc(3px * var(--ui-scale)) calc(3px * var(--ui-scale)) 0 #000,
-    calc(-1px * var(--ui-scale)) calc(-1px * var(--ui-scale)) 0 #000,
-    calc(1px * var(--ui-scale)) calc(-1px * var(--ui-scale)) 0 #000,
-    calc(-1px * var(--ui-scale)) calc(1px * var(--ui-scale)) 0 #000;
-}
-#workspace[data-layout-mode="16:9"] .terminal-user { font-weight: 600; }
-#workspace[data-layout-mode="16:9"] .terminal-cursor { background: #fff; box-shadow: calc(2px * var(--ui-scale)) calc(2px * var(--ui-scale)) 0 #000; }
-#workspace[data-layout-mode="16:9"] chat-terminal[data-phase="cover"] .terminal-output,
-#workspace[data-layout-mode="16:9"] chat-terminal[data-phase="uncover"] .terminal-output { visibility: visible; }
+#workspace[data-layout-mode="16:9"] .chat-window chat-terminal { display: none; }
+#workspace[data-layout-mode="16:9"] .chat-window chat-history-terminal { display: block; }
 @media (prefers-reduced-motion: reduce) {
   #workspace[data-layout-mode="16:9"] .chat-lift { animation: none; }
 }

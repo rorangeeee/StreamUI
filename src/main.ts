@@ -15,6 +15,7 @@ import { HostAudio } from './audio.ts';
 import type { AudioFrame, AudioState } from './audio.ts';
 import { AudioScope } from './audio-scope.ts';
 import './chat-terminal.ts';
+import './chat-history-terminal.ts';
 import { KineticWordmark } from './kinetic-wordmark.ts';
 import { STAGE_WIDTH, STAGE_HEIGHT } from './stage-layout.ts';
 import { WindowManager } from './windows.ts';
