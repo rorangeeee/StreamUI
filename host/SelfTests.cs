@@ -40,7 +40,7 @@ internal static class SelfTests
         await using var runtime = new HostRuntime(store, webRoot, FreePort(), FreePort());
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
         await runtime.Start();
-        check((await http.GetStringAsync(runtime.ConfigUrl)).Contains("scene-list"), "configuration page is embedded");
+        check((await http.GetStringAsync(runtime.ConfigUrl)).Contains("tab-preview"), "configuration page is embedded");
         check((await http.GetStringAsync(runtime.ObsUrl + "sdk/streamui.js")).Contains("createClient"), "the SDK is served at a stable URL");
         check((await http.GetStringAsync(runtime.ObsUrl + "user/scenes/live/index.html")).Contains("createClient"), "user scenes are initialized separately from the program");
         check((await http.GetAsync(runtime.ObsUrl + "api/settings")).StatusCode == HttpStatusCode.NotFound, "OBS pages cannot read private connection settings");

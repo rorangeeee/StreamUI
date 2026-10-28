@@ -83,6 +83,8 @@ export async function play({ container, from, to, covered, signal }) {
 
 ## 原生能力插件
 
+配置面板可以引用 /config-appearance.js 和 /config-theme.css，跟随宿主的外观选择。配色使用 --surface、--field、--text、--muted、--border、--accent 等 CSS 变量；外观偏好独立于场景和插件的 JSON 设置。
+
 参照 contracts/IStreamUIPlugin.cs。插件是实现 IStreamUIPlugin 的 .NET 10 类，StartAsync 启动后台工作并及时返回，停止时取消令牌并调用 DisposeAsync。保存插件设置会重新创建该实例。
 
 插件文件放入用户 plugins/<id>/，清单 plugin.json：
