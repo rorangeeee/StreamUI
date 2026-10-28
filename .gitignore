@@ -1,7 +1,7 @@
 node_modules/
 dist/
 .local/
+**/bin/
+**/obj/
 *.log
-host/bin/
-host/obj/
-/StreamUI Host*.exe
+/StreamUI Core*.exe

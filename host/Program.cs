@@ -10,10 +10,10 @@ public static class Program
         if (args.Contains("--self-test")) return SelfTests.Run(args);
         ApplicationConfiguration.Initialize();
         string? Value(string key) { var index = Array.IndexOf(args, key); return index >= 0 && index + 1 < args.Length ? args[index + 1] : null; }
-        var obsPort = int.TryParse(Value("--obs-port"), out var obs) ? obs : 5180;
-        var configPort = int.TryParse(Value("--config-port"), out var config) ? config : 5181;
+        var obsPort = int.TryParse(Value("--obs-port"), out var obs) ? obs : 5280;
+        var configPort = int.TryParse(Value("--config-port"), out var config) ? config : 5281;
         if (obsPort is < 1024 or > 65535 || configPort is < 1024 or > 65535 || obsPort == configPort) return 1;
-        var identity = $"Local\\StreamUI.Host.{obsPort}.{configPort}";
+        var identity = $"Local\\StreamUI.Core.{obsPort}.{configPort}";
         using var single = new Mutex(true, identity, out var created);
         if (!created)
         {
@@ -25,8 +25,8 @@ public static class Program
             return 0;
         }
         using var activation = new EventWaitHandle(false, EventResetMode.AutoReset, identity + ".Activate");
-        var projectData = Path.Combine(AppContext.BaseDirectory, ".local", "state");
-        var directory = Value("--data-dir") ?? (Directory.Exists(projectData) ? projectData : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StreamUI"));
+        var projectData = Path.Combine(AppContext.BaseDirectory, ".local", "core-data");
+        var directory = Value("--data-dir") ?? (Directory.Exists(projectData) ? projectData : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StreamUI", "Core"));
         Directory.CreateDirectory(directory);
         HostRuntime? host = null;
         try
@@ -51,7 +51,7 @@ public static class Program
         catch (Exception error)
         {
             File.AppendAllText(Path.Combine(directory, "host.log"), $"{DateTimeOffset.Now:O} {error}\n");
-            if (!args.Contains("--headless")) MessageBox.Show("StreamUI Host 无法启动。\n" + error.Message + "\n\n日志：" + Path.Combine(directory, "host.log"), "StreamUI", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (!args.Contains("--headless")) MessageBox.Show("StreamUI Core 无法启动。\n" + error.Message + "\n\n日志：" + Path.Combine(directory, "host.log"), "StreamUI", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
         finally { if (host is not null) host.DisposeAsync().AsTask().GetAwaiter().GetResult(); }

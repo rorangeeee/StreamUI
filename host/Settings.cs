@@ -1,91 +1,69 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
 namespace StreamUI;
 
-public record AudioSettings(bool Enabled = true, string DeviceId = "default", int Channel = -1, double Gain = 1);
-public record LaplaceSettings(bool Enabled = true, string Url = "ws://localhost:9696", string Token = "", bool StartLocalBridge = true);
-public record CanvasSettings(int Width = 3840, int Height = 2160);
-public record AwaySettings(bool Enabled = false, string Text1 = "主播暂离片刻，马上回来。", string Text2 = "", double OverlayOpacity = .5);
-public record ObsSettings(string Url = "ws://127.0.0.1:4455", string Password = "", string Scene21 = "", string Scene16 = "")
+public record LaplaceSettings(bool Enabled = false, string Url = "ws://localhost:9696", string Token = "", bool StartLocalBridge = false);
+public record ObsSettings(bool Enabled = false, string Url = "ws://127.0.0.1:4455", string Password = "");
+public record SceneSlot(string Id, string Name, string Entry, string ObsScene = "", int Width = 1920, int Height = 1080, string Transition = "", string SettingsPage = "");
+public record AwaySettings(bool Enabled = false, string? SceneId = "away");
+public record HostSettings
 {
-    public bool Enabled => !string.IsNullOrWhiteSpace(Scene21) || !string.IsNullOrWhiteSpace(Scene16);
-    public string? ModeForScene(string scene) => !string.IsNullOrWhiteSpace(Scene21) && scene == Scene21.Trim() ? "21:9"
-        : !string.IsNullOrWhiteSpace(Scene16) && scene == Scene16.Trim() ? "16:9" : null;
-}
-public record TitleSettings
-{
-    public string[] English { get; init; } = ["TITLE"];
-    public string[] Chinese { get; init; } = ["标题"];
-}
-public record PanelRect(double X, double Y, double Width, double Height, double Angle, bool Inverted);
-public record SavedLayout(string[] Order, Dictionary<string, PanelRect> Windows);
-public record HostSettings(AudioSettings Audio, LaplaceSettings Laplace, CanvasSettings Canvas, SavedLayout? Layout)
-{
-    public TitleSettings Titles { get; init; } = new();
-    public string LayoutMode { get; init; } = "21:9";
-    public Dictionary<string, SavedLayout?> LayoutProfiles { get; init; } = new();
     public ObsSettings Obs { get; init; } = new();
+    public LaplaceSettings Laplace { get; init; } = new();
+    public SceneSlot[] Scenes { get; init; } = [
+        new("live", "直播", "scenes/live/index.html", Transition: "scenes/live/fade.js", SettingsPage: "scenes/live/settings.html"),
+        new("away", "暂离", "scenes/away/index.html", Transition: "scenes/away/fade.js")
+    ];
+    public string? SelectedSceneId { get; init; } = "live";
     public AwaySettings Away { get; init; } = new();
-    public const int CurrentLayoutVersion = 3;
-    public int LayoutVersion { get; init; } = CurrentLayoutVersion;
-    public static HostSettings Default => new(new(), new(), new(), null);
-    public object Public() => new { Audio, Laplace = Laplace with { Token = "" }, Canvas, Layout, Titles, LayoutVersion, LayoutMode, LayoutProfiles, Obs = Obs with { Password = "" }, Away };
-    public static bool IsLayoutMode(string? mode) => mode is "21:9" or "16:9";
-    public HostSettings SwitchLayout(string mode)
+    public string[] EnabledPlugins { get; init; } = [];
+    public static HostSettings Default => new();
+    public string? ActiveSceneId => Away.Enabled ? Away.SceneId : SelectedSceneId;
+    public static bool IsId(string? value) => value is not null && Regex.IsMatch(value, "^[a-z0-9][a-z0-9_-]{0,63}$");
+    public static void ValidatePath(string path, string prefix, string extension)
     {
-        if (!IsLayoutMode(mode)) throw new ArgumentException("布局应为 21:9 或 16:9。");
-        if (mode == LayoutMode) return this;
-        var profiles = new Dictionary<string, SavedLayout?>(LayoutProfiles) { [LayoutMode] = Layout };
-        return this with { LayoutMode = mode, Layout = profiles.GetValueOrDefault(mode), LayoutProfiles = profiles };
-    }
-    public HostSettings UpdateLayout(string mode, SavedLayout? layout)
-    {
-        if (!IsLayoutMode(mode)) throw new ArgumentException("布局应为 21:9 或 16:9。");
-        ValidateLayout(layout);
-        var profiles = new Dictionary<string, SavedLayout?>(LayoutProfiles) { [mode] = layout };
-        return this with { LayoutProfiles = profiles, Layout = mode == LayoutMode ? layout : Layout };
+        if (string.IsNullOrWhiteSpace(path) || !path.StartsWith(prefix + "/", StringComparison.Ordinal) || path.Contains('\\') || path.Contains(':')
+            || path.Contains('?') || path.Contains('#') || path.Split('/').Any(part => part is "" or "." or "..") || !path.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("文件路径无效。");
     }
     public void Validate()
     {
-        if (Audio is null || Laplace is null || Canvas is null) throw new ArgumentException("配置不完整。");
-        if (Audio.DeviceId is null || Audio.DeviceId.Length > 2048 || Audio.Channel is < -1 or > 31 || !double.IsFinite(Audio.Gain) || Audio.Gain is < 0 or > 4)
-            throw new ArgumentException("音频设备、声道或增益无效。");
-        if (Canvas.Width is < 640 or > 7680 || Canvas.Height is < 360 or > 4320) throw new ArgumentException("画布尺寸应为 640–7680 × 360–4320。");
-        if (Titles is null || new[] { Titles.English, Titles.Chinese }.Any(lines => lines is null || lines.Length is < 1 or > 12 || lines.Any(text => string.IsNullOrWhiteSpace(text) || text.Length > 100 || text.Any(char.IsControl))))
-            throw new ArgumentException("中英文标题分别支持 1–12 段文案，每段最多 100 个字符。");
-        if (Away is null || string.IsNullOrWhiteSpace(Away.Text1) || Away.Text2 is null || Away.Text1.Length > 500 || Away.Text2.Length > 500
-            || Away.Text1.Any(char.IsControl) || Away.Text2.Any(char.IsControl) || !double.IsFinite(Away.OverlayOpacity) || Away.OverlayOpacity is < 0 or > 1)
-            throw new ArgumentException("暂离提示第一段不能为空，每段最多 500 个字符，遮罩透明度应为 0%–100%。");
-        if (LayoutVersion != CurrentLayoutVersion) throw new ArgumentException("布局版本不匹配，请刷新配置页。");
-        if (!IsLayoutMode(LayoutMode) || LayoutProfiles is null || LayoutProfiles.Keys.Any(key => !IsLayoutMode(key)))
-            throw new ArgumentException("布局类型无效。");
-        foreach (var profile in LayoutProfiles.Values) ValidateLayout(profile);
-        if (Obs is null || Obs.Password is null || Obs.Password.Length > 2048 || Obs.Scene21 is null || Obs.Scene16 is null
-            || Obs.Scene21.Length > 256 || Obs.Scene16.Length > 256 || Obs.Scene21.Any(char.IsControl) || Obs.Scene16.Any(char.IsControl)
-            || !Uri.TryCreate(Obs.Url, UriKind.Absolute, out var obsUrl) || obsUrl.Scheme is not ("ws" or "wss") || !string.IsNullOrEmpty(obsUrl.UserInfo) || obsUrl.Fragment != "")
-            throw new ArgumentException("OBS WebSocket 地址、密码或场景名称无效。");
-        if (!string.IsNullOrWhiteSpace(Obs.Scene21) && Obs.Scene21.Trim() == Obs.Scene16.Trim())
-            throw new ArgumentException("两个布局应使用不同的 OBS 场景名称。");
-        if (!Uri.TryCreate(Laplace.Url, UriKind.Absolute, out var url) || url.Scheme is not ("ws" or "wss") || !string.IsNullOrEmpty(url.UserInfo) || url.Fragment != "")
-            throw new ArgumentException("LAPLACE 地址必须是有效的 ws:// 或 wss:// 地址。");
-        if (Laplace.Token is null || Laplace.Token.Length > 4096 || Laplace.Token.Any(char.IsControl)) throw new ArgumentException("LAPLACE Token 无效。");
-        if (Laplace.StartLocalBridge && (!url.IsLoopback || url.Port != 9696 || url.AbsolutePath != "/"))
-            throw new ArgumentException("自动启动本地桥接时，地址应为 ws://localhost:9696。连接其他服务请关闭自动启动。");
-        ValidateLayout(Layout);
-    }
-    public static readonly string[] PanelIds = ["stream-window", "spectrogram-window", "waveform-window", "chat-window", "wordmark-window", "wordmark-blur-window"];
-    public static void ValidateLayout(SavedLayout? layout)
-    {
-        if (layout is null) return;
-        if (layout.Order is null || layout.Windows is null || !layout.Order.Order().SequenceEqual(PanelIds.Order()) || layout.Windows.Count != PanelIds.Length)
-            throw new ArgumentException("布局必须包含全部六个组件，且不能重复。");
-        foreach (var id in PanelIds)
+        if (Scenes is null || Scenes.Length > 100 || Scenes.Any(s => s is null || !IsId(s.Id) || string.IsNullOrWhiteSpace(s.Name) || s.Name.Length > 100
+            || s.Width is < 320 or > 7680 || s.Height is < 180 or > 4320 || s.ObsScene is null || s.Entry is null || s.Transition is null || s.SettingsPage is null || s.ObsScene.Length > 256))
+            throw new ArgumentException("场景信息无效。");
+        if (Scenes.Select(s => s.Id).Distinct().Count() != Scenes.Length) throw new ArgumentException("场景 ID 重复。");
+        var names = Scenes.Where(s => s.ObsScene.Length > 0).Select(s => s.ObsScene);
+        if (names.Distinct().Count() != names.Count()) throw new ArgumentException("OBS 场景已绑定到其他槽位。");
+        foreach (var scene in Scenes)
         {
-            if (!layout.Windows.TryGetValue(id, out var r) || r is null || !new[] { r.X, r.Y, r.Width, r.Height, r.Angle }.All(double.IsFinite)
-                || r.X is < -2 or > 2 || r.Y is < -2 or > 2 || r.Width is <= 0 or > 2 || r.Height is <= 0 or > 2 || Math.Abs(r.Angle) > 360)
-                throw new ArgumentException("布局坐标无效。");
+            ValidatePath(scene.Entry, "scenes", ".html");
+            if (scene.Transition.Length > 0) ValidatePath(scene.Transition, "scenes", ".js");
+            if (scene.SettingsPage.Length > 0) ValidatePath(scene.SettingsPage, "scenes", ".html");
         }
+        if (SelectedSceneId is not null && !Scenes.Any(s => s.Id == SelectedSceneId)) throw new ArgumentException("所选场景不存在。");
+        if (Away is null || Away.SceneId is not null && !Scenes.Any(s => s.Id == Away.SceneId) || Away.Enabled && Away.SceneId is null)
+            throw new ArgumentException("请选择暂离场景。");
+        if (EnabledPlugins is null || EnabledPlugins.Any(id => !IsId(id)) || EnabledPlugins.Distinct().Count() != EnabledPlugins.Length)
+            throw new ArgumentException("插件 ID 无效。");
+        static bool SocketUrl(string? value) => Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme is "ws" or "wss" && uri.UserInfo == "" && uri.Fragment == "";
+        if (Obs is null || !SocketUrl(Obs.Url) || Obs.Password is null || Obs.Password.Length > 2048) throw new ArgumentException("OBS 连接信息无效。");
+        if (Laplace is null || !SocketUrl(Laplace.Url) || Laplace.Token is null || Laplace.Token.Length > 4096 || Laplace.Token.Any(char.IsControl))
+            throw new ArgumentException("弹幕连接信息无效。");
+        var bridge = new Uri(Laplace.Url);
+        if (Laplace.StartLocalBridge && (!bridge.IsLoopback || bridge.Port != 9696 || bridge.AbsolutePath != "/"))
+            throw new ArgumentException("本地桥接地址应为 ws://localhost:9696。");
+    }
+    public HostSettings Select(string id, bool keepAway = false)
+    {
+        if (!Scenes.Any(s => s.Id == id)) throw new ArgumentException("场景不存在。");
+        return this with { SelectedSceneId = id, Away = Away with { Enabled = keepAway && Away.Enabled } };
+    }
+    public HostSettings SetAway(bool enabled)
+    {
+        if (enabled && Away.SceneId is null) throw new ArgumentException("请选择暂离场景。");
+        return this with { Away = Away with { Enabled = enabled } };
     }
 }
 
@@ -94,51 +72,30 @@ public sealed class SettingsStore
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     public string DirectoryPath { get; }
     public HostSettings Current { get; private set; }
+    public bool IsNew { get; private set; }
     public SettingsStore(string directory)
     {
         DirectoryPath = Path.GetFullPath(directory);
         Directory.CreateDirectory(DirectoryPath);
-        var file = Path.Combine(DirectoryPath, "settings.json");
-        try
-        {
-            var contents = File.Exists(file) ? File.ReadAllText(file) : null;
-            Current = contents is not null ? JsonSerializer.Deserialize<HostSettings>(contents, Json) ?? HostSettings.Default : HostSettings.Default;
-            bool migrate = false;
-            int previousVersion = 0;
-            if (contents is not null)
-            {
-                using var document = JsonDocument.Parse(contents);
-                if (document.RootElement.TryGetProperty("layoutVersion", out var version)) previousVersion = version.GetInt32();
-                migrate = previousVersion < HostSettings.CurrentLayoutVersion;
-            }
-            if (migrate) Current = Current with { Canvas = previousVersion < 2 ? new() : Current.Canvas, Layout = null, LayoutVersion = HostSettings.CurrentLayoutVersion };
-            Current.Validate();
-            if (migrate)
-            {
-                File.Copy(file, file + ".before-layout-v3-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"), true);
-                Save(Current).GetAwaiter().GetResult();
-            }
-        }
-        catch (Exception error) when (error is JsonException or ArgumentException)
-        {
-            File.Copy(file, file + ".invalid-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"), true);
-            Current = HostSettings.Default;
-        }
+        var file = Path.Combine(DirectoryPath, "core-settings.json");
+        IsNew = !File.Exists(file);
+        Current = IsNew ? HostSettings.Default : JsonSerializer.Deserialize<HostSettings>(File.ReadAllText(file), Json) ?? throw new ArgumentException("配置文件为空。");
+        Current.Validate();
     }
     public async Task Save(HostSettings settings)
     {
         settings.Validate();
-        var temporary = Path.Combine(DirectoryPath, "settings.tmp");
+        var temporary = Path.Combine(DirectoryPath, "core-settings.tmp");
         await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(settings, Json));
-        File.Move(temporary, Path.Combine(DirectoryPath, "settings.json"), true);
-        Current = settings;
+        File.Move(temporary, Path.Combine(DirectoryPath, "core-settings.json"), true);
+        Current = settings; IsNew = false;
     }
 }
 
 public static class WindowsStartup
 {
     private const string Key = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string Name = "StreamUI Host";
+    private const string Name = "StreamUI Core";
     public static string Arguments { get; set; } = "--no-open";
     public static bool Enabled { get { using var key = Registry.CurrentUser.OpenSubKey(Key); return key?.GetValue(Name) is string; } }
     public static void Set(bool enabled)

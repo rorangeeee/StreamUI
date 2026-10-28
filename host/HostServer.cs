@@ -9,213 +9,182 @@ public sealed class HostServer : IAsyncDisposable
 {
     private readonly WebApplication app;
     private readonly SettingsStore store;
-    private readonly AudioService audio = new();
+    private readonly UserContent content;
     private readonly ObsSceneService obs = new();
-    private readonly NowPlayingService nowPlaying = new();
-    private readonly LaplaceService laplace;
+    private readonly LaplaceService chat;
+    private readonly ChatEvents chatEvents = new();
+    private readonly PluginHost plugins;
     private readonly SocketHub events = new(WebSocketMessageType.Text, 128);
-    private readonly SocketHub frames = new(WebSocketMessageType.Binary, 2);
     private readonly SemaphoreSlim mutations = new(1);
     private readonly int obsPort, configPort;
+    private long revision;
+    private string reason = "startup";
     public string ObsUrl => $"http://127.0.0.1:{obsPort}/";
     public string ConfigUrl => $"http://127.0.0.1:{configPort}/";
     public event Action? ShutdownRequested;
     public event Action? SettingsChanged;
-    private object State() => new { config = store.Current.Public(), audio = audio.Status, laplace = laplace.Status, nowPlaying = nowPlaying.Status, obs = obs.Status, obsUrl = ObsUrl, configUrl = ConfigUrl, startup = WindowsStartup.Enabled };
+    private object State() => new {
+        apiVersion = 1, scenes = store.Current.Scenes,
+        scene = new { selectedId = store.Current.SelectedSceneId, activeId = store.Current.ActiveSceneId, away = store.Current.Away.Enabled, awaySceneId = store.Current.Away.SceneId, revision, reason },
+        obs = obs.Status, chat = chat.Status, plugins = plugins.Status, outputUrl = ObsUrl, configUrl = ConfigUrl, startup = WindowsStartup.Enabled
+    };
     private object StateMessage() => new { type = "state", data = State() };
     private void Broadcast() => events.Publish(StateMessage());
+    private void Emit(string topic, object? data) => events.Publish(new { type = "event", topic, data });
+    private async Task Save(HostSettings next, string cause)
+    {
+        await store.Save(next); revision++; reason = cause; Broadcast(); SettingsChanged?.Invoke();
 
+    }
     public HostServer(SettingsStore store, string webRoot, int obsPort, int configPort)
     {
         this.store = store; this.obsPort = obsPort; this.configPort = configPort;
-        laplace = new(store.DirectoryPath);
+        content = new(store.DirectoryPath);
+        if (store.IsNew) { content.InitializeExamples(webRoot); store.Save(store.Current).GetAwaiter().GetResult(); }
+        chat = new(store.DirectoryPath); plugins = new(content);
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { Args = [], ContentRootPath = AppContext.BaseDirectory, WebRootPath = webRoot });
         builder.Logging.ClearProviders();
-        builder.WebHost.ConfigureKestrel(options =>
-        {
-            options.Listen(IPAddress.Loopback, obsPort);
-            options.Listen(IPAddress.Loopback, configPort);
+        builder.WebHost.ConfigureKestrel(options => {
+            options.Listen(IPAddress.Loopback, obsPort); options.Listen(IPAddress.Loopback, configPort);
             options.Limits.MaxRequestBodySize = 64 * 1024;
         });
         app = builder.Build();
-        app.Use(async (context, next) =>
-        {
+        app.Use(async (context, next) => {
             if (context.Request.Host.Host is not ("127.0.0.1" or "localhost") || context.Connection.RemoteIpAddress is not { } remote || !IPAddress.IsLoopback(remote))
             { context.Response.StatusCode = 403; return; }
             var origin = context.Request.Headers.Origin.ToString();
-            var allowed = new[] { ObsUrl.TrimEnd('/'), ConfigUrl.TrimEnd('/'), $"http://localhost:{obsPort}", $"http://localhost:{configPort}", "http://127.0.0.1:5173", "http://localhost:5173" };
+            string[] allowed = [ObsUrl.TrimEnd('/'), ConfigUrl.TrimEnd('/'), $"http://localhost:{obsPort}", $"http://localhost:{configPort}", "http://127.0.0.1:5373", "http://localhost:5373"];
             if (origin.Length > 0 && !allowed.Contains(origin)) { context.Response.StatusCode = 403; return; }
+            var path = context.Request.Path.Value ?? "";
             var mutation = context.Request.Method is not ("GET" or "HEAD");
-            var admin = context.Request.Path.StartsWithSegments("/api/settings") || context.Request.Path.StartsWithSegments("/api/layout")
-                || context.Request.Path.StartsWithSegments("/api/away")
-                || context.Request.Path.StartsWithSegments("/api/obs")
-                || context.Request.Path.StartsWithSegments("/api/audio") || context.Request.Path.StartsWithSegments("/api/laplace")
-                || context.Request.Path.StartsWithSegments("/api/startup") || context.Request.Path.StartsWithSegments("/api/open");
-            admin |= context.Request.Path == "/api/shutdown";
+            var runtimeAction = path.StartsWith("/api/actions/", StringComparison.Ordinal);
+            var admin = path.StartsWith("/api/", StringComparison.Ordinal) && path != "/api/state" && !runtimeAction
+                && !(context.Request.Method == "GET" && path.StartsWith("/api/scenes/", StringComparison.Ordinal) && path.EndsWith("/settings", StringComparison.Ordinal));
             if (admin && context.Connection.LocalPort != configPort) { context.Response.StatusCode = 404; return; }
             if (mutation && context.Request.Headers["X-StreamUI-Request"] != "1") { context.Response.StatusCode = 403; return; }
-            context.Response.Headers["X-Content-Type-Options"] = "nosniff";
-            context.Response.Headers.CacheControl = "no-store";
+            context.Response.Headers["X-Content-Type-Options"] = "nosniff"; context.Response.Headers.CacheControl = "no-store";
             try { await next(context); }
             catch (Exception error) when (error is ArgumentException or JsonException or BadHttpRequestException)
             { if (!context.Response.HasStarted) { context.Response.StatusCode = 400; await context.Response.WriteAsJsonAsync(new { error = error.Message }); } }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
-            { if (!context.Response.HasStarted) { context.Response.StatusCode = 500; await context.Response.WriteAsJsonAsync(new { error = "操作失败：" + error.Message }); } }
+            { if (!context.Response.HasStarted) { context.Response.StatusCode = 500; await context.Response.WriteAsJsonAsync(new { error = error.Message }); } }
         });
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
         app.MapGet("/api/state", () => Results.Json(State(), SettingsStore.Json));
         app.MapGet("/api/settings", () => Results.Json(store.Current, SettingsStore.Json));
-        app.MapPut("/api/settings", async (HttpRequest request) =>
-        {
-            var settings = await request.ReadFromJsonAsync<HostSettings>(SettingsStore.Json) ?? throw new ArgumentException("配置不能为空。");
-            settings.Validate();
+        app.MapGet("/api/storage", () => Results.Json(new { directory = content.Root, scenes = content.Scenes, plugins = content.Plugins }));
+        app.MapPut("/api/settings", async (HttpRequest request) => {
+            var next = await request.ReadFromJsonAsync<HostSettings>(SettingsStore.Json) ?? throw new ArgumentException("配置为空。");
+            next.Validate();
             await mutations.WaitAsync();
-            try
-            {
-                // Layout has its own endpoint; stale settings forms cannot overwrite a newer layout.
-                settings = settings with { Layout = store.Current.Layout, LayoutMode = store.Current.LayoutMode, LayoutProfiles = store.Current.LayoutProfiles,
-                    Away = settings.Away with { Enabled = store.Current.Away.Enabled } };
+            try {
                 var previous = store.Current;
-                await store.Save(settings);
-                if (settings.Audio != previous.Audio) audio.Configure(settings.Audio);
-                if (settings.Laplace != previous.Laplace) await laplace.Configure(settings.Laplace);
-                if (settings.Obs != previous.Obs) obs.Configure(settings.Obs);
-                Broadcast();
-                SettingsChanged?.Invoke();
-                return Results.Json(State(), SettingsStore.Json);
-            }
-            finally { mutations.Release(); }
+                next = next with { SelectedSceneId = next.Scenes.Any(s => s.Id == previous.SelectedSceneId) ? previous.SelectedSceneId : next.SelectedSceneId,
+                    Away = next.Away with { Enabled = previous.Away.Enabled && next.Away.SceneId is not null } };
+                await Save(next, "settings");
+                if (previous.Obs != next.Obs) obs.Configure(next.Obs);
+                if (previous.Laplace != next.Laplace) await chat.Configure(next.Laplace);
+                if (!previous.EnabledPlugins.SequenceEqual(next.EnabledPlugins)) await plugins.Reload(next.EnabledPlugins);
+                Broadcast(); return Results.Json(State(), SettingsStore.Json);
+            } finally { mutations.Release(); }
         });
-        app.MapPut("/api/layout", async (HttpRequest request) =>
-        {
-            using var document = await JsonDocument.ParseAsync(request.Body);
-            var tagged = document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("mode", out _);
-            if (tagged && (document.RootElement.GetProperty("mode").ValueKind != JsonValueKind.String || !document.RootElement.TryGetProperty("layout", out _)))
-                throw new ArgumentException("缺少有效的布局类型或布局数据。");
-            var mode = tagged ? document.RootElement.GetProperty("mode").GetString() : null;
-            var layout = (tagged ? document.RootElement.GetProperty("layout") : document.RootElement).Deserialize<SavedLayout?>(SettingsStore.Json);
-            HostSettings.ValidateLayout(layout);
+        app.MapPost("/api/scenes", async (HttpRequest request) => {
+            var data = await request.ReadFromJsonAsync<NewSceneRequest>(SettingsStore.Json) ?? throw new ArgumentException("场景信息为空。");
+            var id = "scene-" + Guid.NewGuid().ToString("N")[..10];
+            var name = string.IsNullOrWhiteSpace(data.Name) ? "新场景" : data.Name.Trim();
+            var slot = new SceneSlot(id, name, $"scenes/{id}/index.html");
             await mutations.WaitAsync();
-            try { await store.Save(store.Current.UpdateLayout(tagged ? mode! : store.Current.LayoutMode, layout)); Broadcast(); return Results.Ok(); }
-            finally { mutations.Release(); }
+            try {
+                var next = store.Current with { Scenes = [.. store.Current.Scenes, slot], SelectedSceneId = store.Current.SelectedSceneId ?? id };
+                next.Validate(); content.CreateScene(id, name); await Save(next, "scene-created"); return Results.Json(slot, SettingsStore.Json);
+            } finally { mutations.Release(); }
         });
-        app.MapPut("/api/layout-mode", async (HttpRequest request) =>
-        {
-            var change = await request.ReadFromJsonAsync<LayoutModeRequest>(SettingsStore.Json) ?? throw new ArgumentException("缺少布局类型。");
+        app.MapGet("/api/scenes/{id}/settings", (string id) => {
+            if (!store.Current.Scenes.Any(s => s.Id == id)) return Results.NotFound();
+            return Results.Json(content.ReadSettings("scene", id), SettingsStore.Json);
+        });
+        app.MapPut("/api/scenes/{id}/settings", async (string id, HttpRequest request) => {
+            if (!store.Current.Scenes.Any(s => s.Id == id)) return Results.NotFound();
+            using var json = await JsonDocument.ParseAsync(request.Body);
             await mutations.WaitAsync();
-            try { await store.Save(store.Current.SwitchLayout(change.Mode)); Broadcast(); return Results.Json(State(), SettingsStore.Json); }
+            try { await content.SaveSettings("scene", id, json.RootElement); Emit("scene.settingsChanged", new { id }); return Results.Ok(); }
             finally { mutations.Release(); }
         });
-        app.MapPut("/api/away", async (HttpRequest request) =>
-        {
-            var change = await request.ReadFromJsonAsync<AwayModeRequest>(SettingsStore.Json);
-            if (change?.Enabled is not bool enabled) throw new ArgumentException("缺少暂离模式状态。");
-            await SetAway(enabled);
-            return Results.Json(State(), SettingsStore.Json);
-        });
-        app.MapPost("/api/obs/reconnect", async () =>
-        {
+        app.MapPost("/api/actions/scene", async (HttpRequest request) => {
+            var change = await request.ReadFromJsonAsync<SelectSceneRequest>(SettingsStore.Json) ?? throw new ArgumentException("请选择场景。");
             await mutations.WaitAsync();
-            try { obs.Configure(store.Current.Obs); return Results.Ok(); }
+            try { await Save(store.Current.Select(change.Id), "manual"); return Results.Json(State(), SettingsStore.Json); }
             finally { mutations.Release(); }
         });
-        app.MapGet("/api/audio/devices", async () =>
-        {
-            try { return Results.Json(await Task.Run(Wasapi.Devices), SettingsStore.Json); }
-            catch (Exception error) { return Results.Json(new { error = "无法枚举 Windows 输出设备：" + error.Message }, statusCode: 503); }
+        app.MapPost("/api/actions/away", async (HttpRequest request) => {
+            var change = await request.ReadFromJsonAsync<AwayRequest>(SettingsStore.Json);
+            if (change?.Enabled is not bool enabled) throw new ArgumentException("暂离状态无效。");
+            await SetAway(enabled); return Results.Json(State(), SettingsStore.Json);
         });
-        app.MapPost("/api/audio/restart", async () =>
-        {
+        app.MapPost("/api/obs/reconnect", () => { obs.Configure(store.Current.Obs); return Results.Ok(); });
+        app.MapPost("/api/chat/reconnect", async () => { await mutations.WaitAsync(); try { await chat.Configure(store.Current.Laplace); return Results.Ok(); } finally { mutations.Release(); } });
+        app.MapPost("/api/plugins/reload", async () => {
+            await mutations.WaitAsync(); try { await plugins.Reload(store.Current.EnabledPlugins); return Results.Json(plugins.Status, SettingsStore.Json); } finally { mutations.Release(); }
+        });
+        app.MapGet("/api/plugins/{id}/settings", (string id) => plugins.Contains(id) ? Results.Json(content.ReadSettings("plugin", id), SettingsStore.Json) : Results.NotFound());
+        app.MapPut("/api/plugins/{id}/settings", async (string id, HttpRequest request) => {
+            if (!plugins.Contains(id)) return Results.NotFound();
+            using var json = await JsonDocument.ParseAsync(request.Body);
             await mutations.WaitAsync();
-            try { audio.Configure(store.Current.Audio); return Results.Ok(); }
-            finally { mutations.Release(); }
+            try { await content.SaveSettings("plugin", id, json.RootElement); await plugins.Restart(id); return Results.Ok(); } finally { mutations.Release(); }
         });
-        app.MapPost("/api/laplace/reconnect", async () =>
-        {
-            await mutations.WaitAsync();
-            try { await laplace.Configure(store.Current.Laplace); return Results.Ok(); }
-            finally { mutations.Release(); }
-        });
-        app.MapPut("/api/startup", async (HttpRequest request) =>
-        {
-            var data = await request.ReadFromJsonAsync<StartupRequest>() ?? throw new ArgumentException("缺少启动设置。");
+        app.MapPut("/api/startup", async (HttpRequest request) => {
+            var data = await request.ReadFromJsonAsync<StartupRequest>() ?? throw new ArgumentException("启动设置为空。");
             WindowsStartup.Set(data.Enabled); Broadcast(); return Results.Ok();
         });
-        app.MapPost("/api/open/{page}", (string page) =>
-        {
-            if (page is not ("obs" or "config")) return Results.NotFound();
-            Program.Open(page == "obs" ? ObsUrl : ConfigUrl); return Results.Ok();
+        app.MapPost("/api/open/{page}", (string page) => {
+            var target = page switch { "obs" => ObsUrl, "config" => ConfigUrl, "data" => content.Root, "scenes" => content.Scenes, "plugins" => content.Plugins, _ => null };
+            if (target is null) return Results.NotFound(); Program.Open(target); return Results.Ok();
         });
-        app.MapPost("/api/shutdown", (HttpResponse response) =>
-        {
-            response.OnCompleted(() => { ShutdownRequested?.Invoke(); return Task.CompletedTask; });
-            return Results.Accepted();
-        });
+        app.MapPost("/api/shutdown", (HttpResponse response) => { response.OnCompleted(() => { ShutdownRequested?.Invoke(); return Task.CompletedTask; }); return Results.Accepted(); });
         app.Map("/ws/events", context => events.Handle(context, StateMessage(), app.Lifetime.ApplicationStopping));
-        app.Map("/ws/audio", context => frames.Handle(context, stopping: app.Lifetime.ApplicationStopping));
-        var provider = new PhysicalFileProvider(webRoot);
-        app.Use(async (context, next) =>
-        {
+        app.Map("/ws/plugins/{id}/{topic}", (HttpContext context, string id, string topic) => plugins.HandleBinary(context, id, topic, app.Lifetime.ApplicationStopping));
+        app.Use(async (context, next) => {
             if (context.Request.Path == "/" || context.Request.Path == "/index.html")
-            {
-                context.Response.ContentType = "text/html; charset=utf-8";
-                await context.Response.SendFileAsync(Path.Combine(webRoot, context.Connection.LocalPort == configPort ? "config.html" : "index.html"));
-                return;
-            }
+            { context.Response.ContentType = "text/html; charset=utf-8"; await context.Response.SendFileAsync(Path.Combine(webRoot, context.Connection.LocalPort == configPort ? "config.html" : "index.html")); return; }
             if (context.Request.Path == "/config.html" && context.Connection.LocalPort != configPort) { context.Response.StatusCode = 404; return; }
             await next(context);
         });
-        app.UseStaticFiles(new StaticFileOptions { FileProvider = provider });
-        audio.Frame += frames.Publish;
-        audio.Changed += Broadcast;
-        nowPlaying.Changed += Broadcast;
-        laplace.Changed += Broadcast;
-        laplace.Event += data => events.Publish(new { type = "chat", data });
-        obs.Changed += Broadcast;
+        app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(content.Scenes), RequestPath = "/user/scenes" });
+        app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(content.Plugins), RequestPath = "/user/plugins" });
+        app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(webRoot) });
+        obs.Changed += () => { Broadcast(); Emit("obs.status", obs.Status); };
         obs.SceneChanged += ApplyObsScene;
+        chat.Changed += () => { Broadcast(); Emit("chat.status", chat.Status); };
+        chat.Event += data => { if (chatEvents.Normalize(data) is { } item) Emit("chat." + item.Kind, item); };
+        plugins.Publish += Emit; plugins.Changed += Broadcast;
     }
     public async Task Start()
     {
-        await app.StartAsync();
-        nowPlaying.Start();
-        audio.Configure(store.Current.Audio);
-        obs.Configure(store.Current.Obs);
-        await laplace.Configure(store.Current.Laplace);
+        await app.StartAsync(); obs.Configure(store.Current.Obs); await chat.Configure(store.Current.Laplace); await plugins.Reload(store.Current.EnabledPlugins);
     }
-    public async ValueTask DisposeAsync()
-    {
-        obs.Changed -= Broadcast;
-        await obs.DisposeAsync();
-        audio.Changed -= Broadcast; laplace.Changed -= Broadcast; nowPlaying.Changed -= Broadcast;
-        await nowPlaying.DisposeAsync();
-        audio.Dispose(); await laplace.DisposeAsync();
-        await app.StopAsync(TimeSpan.FromSeconds(5)); await app.DisposeAsync();
-    }
-    private record StartupRequest(bool Enabled);
-    private record LayoutModeRequest(string Mode);
-    private record AwayModeRequest(bool? Enabled);
-
     public async Task SetAway(bool enabled)
     {
         await mutations.WaitAsync();
-        try
-        {
-            if (store.Current.Away.Enabled == enabled) return;
-            await store.Save(store.Current with { Away = store.Current.Away with { Enabled = enabled } });
-            Broadcast(); SettingsChanged?.Invoke();
-        }
+        try { await Save(store.Current.SetAway(enabled), enabled ? "away" : "return");  }
         finally { mutations.Release(); }
     }
-
-    private async Task ApplyObsScene(string scene)
+    private async Task ApplyObsScene(string name)
     {
         await mutations.WaitAsync();
-        try
-        {
-            var mode = store.Current.Obs.ModeForScene(scene);
-            if (mode is null || mode == store.Current.LayoutMode) return;
-            await store.Save(store.Current.SwitchLayout(mode)); Broadcast();
-        }
-        finally { mutations.Release(); }
+        try {
+
+            var target = store.Current.Scenes.FirstOrDefault(s => s.ObsScene == name && name.Length > 0);
+            if (target is not null && target.Id != store.Current.SelectedSceneId) await Save(store.Current.Select(target.Id, keepAway: true), "obs");
+        } finally { mutations.Release(); }
     }
+    public async ValueTask DisposeAsync()
+    {
+        await obs.DisposeAsync(); await chat.DisposeAsync(); await plugins.DisposeAsync();
+        await app.StopAsync(TimeSpan.FromSeconds(5)); await app.DisposeAsync(); mutations.Dispose();
+    }
+    private record NewSceneRequest(string Name);
+    private record SelectSceneRequest(string Id);
+    private record AwayRequest(bool? Enabled);
+    private record StartupRequest(bool Enabled);
 }

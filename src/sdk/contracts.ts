@@ -1,0 +1,28 @@
+export interface SceneSlot {
+  id: string; name: string; entry: string; obsScene: string;
+  width: number; height: number; transition: string; settingsPage: string;
+}
+export interface PluginInfo {
+  id: string; name: string; version: string; capabilities: string[];
+  settingsPage: string; enabled: boolean; state: string; error: string | null;
+}
+export interface SceneState { selectedId: string | null; activeId: string | null; away: boolean; awaySceneId: string | null; revision: number; reason: string }
+export interface ServiceStatus { state: string; error: string | null }
+export interface PublicState {
+  apiVersion: 1; scenes: SceneSlot[]; scene: SceneState;
+  obs: ServiceStatus & { scene: string | null; detail: string | null; transition?: { id: string; name: string; startedAt: number; phase: string } | null };
+  chat: ServiceStatus & { events: number; lastEventAt: string | null; localBridge: boolean };
+  plugins: PluginInfo[]; outputUrl: string; configUrl: string; startup: boolean;
+}
+export interface CoreSettings {
+  obs: { enabled: boolean; url: string; password: string };
+  laplace: { enabled: boolean; url: string; token: string; startLocalBridge: boolean };
+  scenes: SceneSlot[]; selectedSceneId: string | null; away: { enabled: boolean; sceneId: string | null }; enabledPlugins: string[];
+}
+export interface ChatMessage {
+  id: string | null; kind: 'message' | 'gift' | 'superchat'; platform: string; timestamp: number;
+  user: { id: string; name: string; level: number | null; medalName: string | null; medalLevel: number | null };
+  text: string; gift: { name: string; count: number | null } | null; payment: { amount: number | null; currency: string } | null;
+}
+export interface TransitionContext { container: HTMLElement; from: SceneSlot | null; to: SceneSlot; signal: AbortSignal; covered(): void }
+export interface TransitionModule { play(context: TransitionContext): Promise<void> }

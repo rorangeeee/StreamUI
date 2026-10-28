@@ -38,7 +38,7 @@ internal sealed class Tray : ApplicationContext
             catch (Exception error) { startup.Checked = WindowsStartup.Enabled; NotifyError(error); }
         };
         menu.Items.Add(startup);
-        menu.Items.Add("退出 StreamUI Host", null, (_, _) => _ = Quit());
+        menu.Items.Add("退出 StreamUI Core", null, (_, _) => _ = Quit());
         menu.Opening += (_, _) => Update();
         icon = new NotifyIcon { Icon = appIcon, Visible = true, ContextMenuStrip = menu };
         icon.DoubleClick += (_, _) => _ = Run(host.Start, host.ConfigUrl);
@@ -62,8 +62,8 @@ internal sealed class Tray : ApplicationContext
             ServiceState.Running => "运行中", ServiceState.Starting => "正在启动", ServiceState.Stopping => "正在停止",
             ServiceState.Error => "启动失败", _ => "已停止",
         };
-        status.Text = "StreamUI Host · " + text;
-        icon.Text = $"StreamUI Host · {text}";
+        status.Text = "StreamUI Core · " + text;
+        icon.Text = $"StreamUI Core · {text}";
         start.Enabled = !busy && host.State is ServiceState.Stopped or ServiceState.Error;
         stop.Enabled = !busy && host.State == ServiceState.Running;
         restart.Enabled = !busy && host.State == ServiceState.Running;
@@ -79,7 +79,7 @@ internal sealed class Tray : ApplicationContext
         catch (Exception error) { NotifyError(error); }
         finally { busy = false; Update(); }
     }
-    private void NotifyError(Exception error) => icon.ShowBalloonTip(5000, "StreamUI Host", error.Message, ToolTipIcon.Error);
+    private void NotifyError(Exception error) => icon.ShowBalloonTip(5000, "StreamUI Core", error.Message, ToolTipIcon.Error);
     private async Task Quit()
     {
         if (busy) return;
