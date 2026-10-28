@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f5f5f7" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script src="/config-appearance.js"></script><link rel="stylesheet" href="/config-theme.css"/><link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>StreamUI · 设置</title>
   </head>
   <body>
@@ -29,6 +29,7 @@
           <div class="page-heading"><h1>设置</h1></div>
           <form id="settings-form">
             <div class="settings-grid">
+<section class="card host-card"><div class="card-heading"><h2>外观</h2></div><label class="field">配色<select id="appearance-mode" data-immediate><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">暗色</option></select></label></section>
               <section class="card host-card"><div class="card-heading"><h2>暂离提示</h2></div>
                 <label class="toggle-row" for="away-settings-enabled"><span>暂离模式</span><input id="away-settings-enabled" type="checkbox" role="switch" data-immediate disabled /></label>
                 <div class="title-fields"><label class="field">第一段文字<input id="away-text-1" type="text" maxlength="500" value="主播暂离片刻，马上回来。" required /></label><label class="field">第二段文字 <input id="away-text-2" type="text" maxlength="500"  /></label></div>
