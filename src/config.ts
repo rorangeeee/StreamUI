@@ -66,24 +66,24 @@ function status(id: string, state: string, live: boolean): void { $(id).textCont
 function syncState(): void {
   const state = host.state;
   $('host-dot').dataset.live = String(host.connected);
-  $('host-status').textContent = host.connected ? 'Host 已连接' : 'Host 连接中断，正在重连';
+  $('host-status').textContent = host.connected ? '已连接' : '正在重新连接';
   if (!host.connected) {
-    status('audio-status', 'Host 离线', false); status('laplace-status', 'Host 离线', false);
-    status('now-playing-status', 'Host 离线', false); $('now-playing-detail').textContent = '连接恢复后自动读取曲目信息。';
+    status('audio-status', '未连接', false); status('laplace-status', '未连接', false);
+    status('now-playing-status', '未连接', false); $('now-playing-detail').textContent = '未连接';
     return;
   }
   if (!state) return;
   const track = state.nowPlaying;
   status('now-playing-status', track?.playing ? '正在播放' : track?.state === 'paused' ? '已暂停' : '等待曲目', Boolean(track?.playing));
   $('now-playing-detail').textContent = track?.playing ? `${track.title}${track.artist ? ` — ${track.artist}` : ''}`
-    : track?.state === 'unavailable' ? '系统媒体信息暂不可用，正在自动重试。' : '暂未检测到正在播放的曲目。';
+    : track?.state === 'unavailable' ? '正在读取曲目信息' : '暂无曲目';
   $('obs-url').textContent = state.obsUrl;
   status('audio-status', ({ live: '采集中', idle: '已停止', error: '设备不可用', connecting: '正在连接' })[state.audio.state] ?? '等待连接', state.audio.state === 'live');
   const rate = state.audio.deviceSampleRate && state.audio.deviceSampleRate !== state.audio.sampleRate ? `设备 ${state.audio.deviceSampleRate / 1000} kHz → 可视化 ${state.audio.sampleRate / 1000} kHz` : `${state.audio.sampleRate / 1000} kHz`;
   const fps = state.audio.frameRate > 0 ? ` · ${state.audio.frameRate.toFixed(1)} fps` : '';
-  $('audio-detail').textContent = state.audio.error ?? (state.audio.sampleRate ? `${rate} · ${state.audio.channels} 声道${fps}` : '由 Windows host 获取正在播放的桌面声音，无需共享屏幕。');
+  $('audio-detail').textContent = state.audio.error ?? (state.audio.sampleRate ? `${rate} · ${state.audio.channels} 声道${fps}` : '等待音频设备');
   status('laplace-status', ({ connected: '已连接', disconnected: '已停用', connecting: '正在连接', reconnecting: '等待重连' })[state.laplace.state] ?? '等待连接', state.laplace.state === 'connected');
-  $('laplace-detail').textContent = state.laplace.error ?? (state.laplace.state === 'connected' ? '已连接 Event Bridge，等待采集端事件' : '等待桥接服务');
+  $('laplace-detail').textContent = state.laplace.error ?? (state.laplace.state === 'connected' ? '等待新消息' : '等待桥接服务');
   $('event-count').textContent = String(state.laplace.events);
   input('startup-enabled').checked = state.startup;
   if (settings) settings.layout = state.config.layout;

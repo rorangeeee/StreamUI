@@ -31,8 +31,8 @@ function sync(): void {
   status.dataset.live = String(host.connected && obs?.state === 'connected');
   const transition = obs?.transition;
   detail.textContent = obs?.error ?? obs?.detail ?? (transition?.phase === 'started'
-    ? `正在转场：${transition.name} · 画面完全遮住：1000 ms · 建议 OBS 延迟：1100 ms`
-    : obs?.scene ? `当前输出场景：${obs.scene} · 建议 OBS 延迟：1100 ms` : '配置场景名称后监听 OBS 的实际输出场景。');
+    ? `正在转场：${transition.name}`
+    : obs?.scene ? `当前输出场景：${obs.scene}` : '—');
   modeDetail.textContent = `${picker.value} · 两套布局独立保存`;
 }
 

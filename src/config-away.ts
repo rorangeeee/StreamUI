@@ -23,7 +23,7 @@ function sync(): void {
   const enabled = host.state?.config.away?.enabled ?? false;
   for (const input of switches) { input.checked = enabled; input.disabled = !host.connected || busy; }
   const status = document.getElementById('away-status')!;
-  status.textContent = errorText || (!host.connected ? '等待 Host 连接' : enabled ? '暂离已开启 · 置顶提示与遮罩正在显示' : '暂离已关闭');
+  status.textContent = errorText || (!host.connected ? '未连接' : enabled ? '暂离中' : '已返回');
   status.dataset.live = String(enabled);
 }
 for (const input of switches) input.addEventListener('change', async () => {
