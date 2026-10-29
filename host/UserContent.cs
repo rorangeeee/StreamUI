@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Net;
 namespace StreamUI;
 public sealed class UserContent
 {
@@ -21,26 +20,6 @@ public sealed class UserContent
             Directory.CreateDirectory(destination);
             foreach (var file in Directory.EnumerateFiles(Path.Combine(source, id))) File.Copy(file, Path.Combine(destination, Path.GetFileName(file)));
         }
-    }
-    public void CreateScene(string id, string name)
-    {
-        if (!HostSettings.IsId(id)) throw new ArgumentException("场景 ID 无效。");
-        var directory = Path.Combine(Scenes, id);
-        if (Directory.Exists(directory)) throw new ArgumentException("场景目录已存在。");
-        Directory.CreateDirectory(directory);
-        const string html = """
-            <!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-            <style>html,body{margin:0;width:100%;height:100%;background:transparent;font:24px system-ui}#label{position:absolute;left:32px;bottom:32px;color:white;text-shadow:0 1px 4px #000}</style>
-            <div id="label">{{NAME}}</div>
-            <script type="module">
-            import { createClient } from '/sdk/streamui.js';
-            const client = createClient();
-            client.on('scene.enter', () => document.documentElement.dataset.active = 'true');
-            client.on('scene.leave', () => document.documentElement.dataset.active = 'false');
-            client.start();
-            </script></html>
-            """;
-        File.WriteAllText(Path.Combine(directory, "index.html"), html.Replace("{{NAME}}", WebUtility.HtmlEncode(name)));
     }
     private string SettingsPath(string kind, string id)
     {

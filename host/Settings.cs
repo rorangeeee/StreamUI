@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
@@ -8,6 +9,8 @@ public record LaplaceSettings(bool Enabled = false, string Url = "ws://localhost
 public record ObsSettings(bool Enabled = false, string Url = "ws://127.0.0.1:4455", string Password = "");
 public record SceneSlot(string Id, string Name, string Entry, string ObsScene = "", int Width = 1920, int Height = 1080, string Transition = "", string SettingsPage = "");
 public record AwaySettings(bool Enabled = false, string? SceneId = "away");
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public record BroadcasterSettings(ObsSettings Obs, LaplaceSettings Laplace, string[] EnabledPlugins);
 public record HostSettings
 {
     public ObsSettings Obs { get; init; } = new();

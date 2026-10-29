@@ -4,6 +4,8 @@
 
 每个槽位包含 id、name、entry、obsScene、width、height、transition、settingsPage。ID 使用小写字母、数字、横线或下划线；入口、转场和设置页均是用户目录下 scenes/ 内的相对路径。
 
+这些结构由开发者在启动前写入用户目录的 core-settings.json。scenes 是固定槽位列表，selectedSceneId 是初始选择，away.sceneId 是固定暂离场景。运行时配置页和 HTTP 接口不创建、删除或修改槽位；主播仅切换现有场景及调整场景自定义参数。
+
 entry 为 HTML，transition 为可选的 JavaScript 模块，settingsPage 为可选的 HTML 配置面板。核心不保存标题、颜色、组件树或几何数据。
 
 场景播放时，入口 URL 附带 streamuiScene 和 streamuiPreview 参数。设置页也附带 streamuiScene；插件设置页附带 streamuiPlugin。
@@ -126,14 +128,15 @@ dotnet build examples/plugins/uptime/Uptime.csproj -c Release
 
 配置端口额外接口：
 - GET /api/settings、PUT /api/settings
-- POST /api/scenes
 - PUT /api/scenes/<id>/settings
 - GET /api/plugins/<id>/settings、PUT /api/plugins/<id>/settings
 - POST /api/plugins/reload
 - POST /api/obs/reconnect、POST /api/chat/reconnect
 - GET /api/storage
 - PUT /api/startup
-- POST /api/open/obs、config、data、scenes、plugins
+- POST /api/open/obs、config、data、plugins
 - POST /api/shutdown
 
 写请求使用 JSON 正文及 X-StreamUI-Request: 1。设置变更只更新对应配置文件；用户场景源码和素材不由这些接口改写。
+
+GET /api/settings 和 PUT /api/settings 仅包含 obs、laplace 和 enabledPlugins。PUT 会拒绝 scenes、selectedSceneId、away 等结构字段；保存连接或插件偏好不会改动预制槽位、当前选择或暂离状态。场景切换和暂离使用 /api/actions/scene、/api/actions/away；场景参数继续使用 /api/scenes/<id>/settings，设置页应通过 getSceneContext().sceneId 绑定当前 ID。

@@ -26,7 +26,19 @@ try{
  await until(async()=>{try{return(await fetch(new URL('/api/state',configUrl))).ok;}catch{return false;}});
  const config=await request('/api/settings');
  const initial=await request('/api/state');
- check(initial.scenes.length===2&&!('audio'in initial)&&!('nowPlaying'in initial),'core starts without audio or media capabilities');
+ check(initial.scenes.length===3&&!('audio'in initial)&&!('nowPlaying'in initial),'core loads prebuilt scenes without audio or media capabilities');
+ check(!('scenes'in config)&&!('selectedSceneId'in config)&&!('away'in config),'broadcaster settings expose no scene authoring fields');
+ const fixedScenes=initial.scenes;
+ const initialFiles=await readFile(path.join(directory,'core-settings.json'),'utf8');
+ const create=await fetch(new URL('/api/scenes',configUrl),{method:'POST',headers:{'Content-Type':'application/json','X-StreamUI-Request':'1'},body:JSON.stringify({name:'Forbidden scene'})});
+ check(create.status===404,'the scene creation endpoint is removed');
+ const remove=await fetch(new URL('/api/scenes/rehearsal',configUrl),{method:'DELETE',headers:{'X-StreamUI-Request':'1'}});
+ check(remove.status===404,'the configuration API cannot delete prebuilt scenes');
+ for(const fields of [{scenes:[]},{selectedSceneId:'rehearsal'},{away:{enabled:true,sceneId:'rehearsal'}}]){
+   const response=await fetch(new URL('/api/settings',configUrl),{method:'PUT',headers:{'Content-Type':'application/json','X-StreamUI-Request':'1'},body:JSON.stringify({...config,...fields})});
+   check(response.status===400,'broadcaster writes reject structural field '+Object.keys(fields)[0]);
+ }
+ check((await readFile(path.join(directory,'core-settings.json'),'utf8'))===initialFiles,'rejected scene authoring leaves the preset unchanged');
  check((await fetch(new URL('/api/settings',outputUrl))).status===404,'private settings are not exposed to OBS pages');
  check((await fetch(new URL('/api/settings',configUrl),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)})).status===403,'writes require the application header');
  check((await fetch(new URL('/api/state',outputUrl),{headers:{Origin:'https://example.com'}})).status===403,'foreign origins are rejected');
@@ -37,7 +49,7 @@ try{
  check((await request('/api/scenes/live/settings')).custom.count===7,'scene settings preserve arbitrary user fields');
  const sceneFile=path.join(directory,'scenes/live/index.html');
  const originalFile=await readFile(sceneFile,'utf8');
- await request('/api/settings','PUT',{...config,obs:{enabled:true,url:obs.url,password:'test-password'},laplace:{enabled:true,url:bridge.url,token:'test-token',startLocalBridge:false},scenes:config.scenes.map(s=>({...s,obsScene:s.id==='live'?'Game':'Break'}))});
+ await request('/api/settings','PUT',{...config,obs:{enabled:true,url:obs.url,password:'test-password'},laplace:{enabled:true,url:bridge.url,token:'test-token',startLocalBridge:false}});
  await until(async()=>{const s=await request('/api/state');return s.obs.state==='connected'&&s.chat.state==='connected'&&authenticated&&bridgeAuth&&pong;});
  check(true,'OBS authenticates and the chat bridge answers heartbeats');
  const publicState=JSON.stringify(await request('/api/state'));
@@ -49,17 +61,19 @@ try{
  await until(async()=>(await request('/api/state')).scene.activeId==='live');
  await request('/api/actions/away','POST',{enabled:true});
  let state=await request('/api/state');check(state.scene.activeId==='away'&&state.scene.selectedId==='live','away mode overlays the selected scene without losing it');
+ await request('/api/settings','PUT',await request('/api/settings'));
+ check((await request('/api/state')).scene.away,'saving broadcaster settings preserves independent away state');
  await request('/api/actions/away','POST',{enabled:false});
  check((await request('/api/state')).scene.activeId==='live','return restores the selected scene');
  const chat={type:'message',origin:'test',id:'message-one',uid:1,username:'测试',message:'Hello',timestampNormalized:1700000000000,userLvl:9};
  for(const socket of bridge.clients)bridge.send(socket,chat);
  const relayed=await events.next(value=>value.topic==='chat.message');
  check(relayed.data.user.name==='测试'&&relayed.data.text==='Hello'&&relayed.data.timestamp===1700000000000,'chat events use the public structured protocol');
- const newScene=await request('/api/scenes','POST',{name:'新场景'});
- check((await fetch(new URL('/user/'+newScene.entry,outputUrl))).ok,'new slots create a user-owned scene entry');
+ const rehearsal=initial.scenes.find(scene=>scene.id==='rehearsal');
+ check((await fetch(new URL('/user/'+rehearsal.entry,outputUrl))).ok&&(await fetch(new URL('/user/'+rehearsal.settingsPage,configUrl))).ok,'prebuilt scenes serve their content and parameter panels');
+ await request('/api/scenes/rehearsal/settings','PUT',{title:'独立场景标题',custom:{preserved:true}});
+ check((await request('/api/scenes/rehearsal/settings')).title==='独立场景标题'&&(await request('/api/scenes/live/settings')).title==='User title','scene parameters remain editable and isolated without authoring a slot');
  check((await readFile(sceneFile,'utf8'))===originalFile,'slot and connection changes never overwrite user scene files');
- const bad=await fetch(new URL('/api/settings',configUrl),{method:'PUT',headers:{'Content-Type':'application/json','X-StreamUI-Request':'1'},body:JSON.stringify({...await request('/api/settings'),scenes:[{...config.scenes[0],entry:'scenes/../private.html'}]})});
- check(bad.status===400,'path traversal entries are rejected');
  const pluginDirectory=path.join(directory,'plugins/uptime');await mkdir(pluginDirectory,{recursive:true});
  await cp(path.resolve('examples/plugins/uptime/bin/Release/net10.0'),pluginDirectory,{recursive:true});
  for(const name of ['plugin.json','settings.html'])await cp(path.resolve('examples/plugins/uptime',name),path.join(pluginDirectory,name));
@@ -75,6 +89,7 @@ try{
  await request('/api/settings','PUT',{...await request('/api/settings'),enabledPlugins:[]});
  check((await request('/api/state')).plugins[0].state==='disabled','disabling a capability releases its lifecycle');
  check((await request('/api/scenes/live/settings')).title==='User title','plugin changes preserve scene configuration');
+ check(JSON.stringify((await request('/api/state')).scenes)===JSON.stringify(fixedScenes),'all runtime actions preserve the prebuilt scene manifest');
  await writeFile(path.join(directory,'integration-passed.json'),JSON.stringify({passed},null,2));
  console.log(JSON.stringify({passed},null,2));
 }finally{for(const socket of streams)socket.close();obs.close();bridge.close();}

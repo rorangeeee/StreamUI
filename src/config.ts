@@ -6,8 +6,7 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 const input = (id: string) => $<HTMLInputElement>(id);
 const select = (id: string) => $<HTMLSelectElement>(id);
 const client = createClient();
-let settings: CoreSettings | null = null, editingId = '', currentTab = 'preview', dirty = false, optionsSignature = '', pluginSignature = '', panelPlugin = '';
-const drafts = new Map<string, SceneSlot>();
+let settings: CoreSettings | null = null, currentTab = 'preview', optionsSignature = '', parametersSignature = '', pluginSignature = '', panelPlugin = '';
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 function toast(message: string, error = false): void {
@@ -38,40 +37,27 @@ document.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(button => {
     event.preventDefault(); buttons[index].focus(); tab(buttons[index].dataset.tab!);
   };
 });
-function markDirty(): void { dirty = true; $('save-status').textContent = '有未保存的修改'; }
-function editScene(): SceneSlot | undefined { return drafts.get(editingId) ?? client.state?.scenes.find(scene => scene.id === editingId); }
-function rememberDraft(): void {
-  const scene = editScene(); if (!scene) return;
-  drafts.set(editingId, { ...scene, name: input('scene-name').value.trim(), obsScene: input('scene-obs').value.trim(),
-    entry: input('scene-entry').value.trim(), width: Number(input('scene-width').value), height: Number(input('scene-height').value),
-    transition: input('scene-transition').value.trim(), settingsPage: input('scene-settings-page').value.trim() });
-}
-function fillEditor(): void {
-  const scene = editScene(); $<HTMLFieldSetElement>('scene-editor').disabled = !scene;
-  if (!scene) { $('scene-custom-panel').hidden = true; return; }
-  input('scene-name').value = scene.name; input('scene-obs').value = scene.obsScene; input('scene-entry').value = scene.entry;
-  input('scene-width').value = String(scene.width); input('scene-height').value = String(scene.height);
-  input('scene-transition').value = scene.transition; input('scene-settings-page').value = scene.settingsPage;
-  $('scene-custom-panel').hidden = !scene.settingsPage;
-  const frame = $<HTMLIFrameElement>('scene-config-frame');
-  if (scene.settingsPage) {
-    const url = new URL('/user/' + scene.settingsPage, location.origin); url.searchParams.set('streamuiScene', scene.id);
-    if (frame.src !== url.href) frame.src = url.href;
-  } else frame.removeAttribute('src');
-}
+function markDirty(): void { $('save-status').textContent = '有未保存的修改'; }
 function sceneOptions(): void {
   const state = client.state; if (!state) return;
-  if (!state.scenes.some(scene => scene.id === editingId)) editingId = state.scene.selectedId ?? state.scenes[0]?.id ?? '';
   const signature = JSON.stringify(state.scenes.map(scene => [scene.id, scene.name]));
   if (signature !== optionsSignature) {
     optionsSignature = signature;
-    const previousAway = select('away-scene').value;
-    for (const id of ['scene-picker', 'scene-edit-id']) select(id).replaceChildren(...state.scenes.map(scene => new Option(scene.name, scene.id)));
-    select('away-scene').replaceChildren(new Option('未选择', ''), ...state.scenes.map(scene => new Option(scene.name, scene.id)));
-    select('away-scene').value = dirty ? previousAway : state.scene.awaySceneId ?? '';
-    select('scene-edit-id').value = editingId; fillEditor();
+    select('scene-picker').replaceChildren(...state.scenes.map(scene => new Option(scene.name, scene.id)));
   }
   select('scene-picker').value = state.scene.selectedId ?? '';
+}
+function drawSceneParameters(): void {
+  const scenes = (client.state?.scenes ?? []).filter(scene => scene.settingsPage);
+  const signature = JSON.stringify(scenes.map(scene => [scene.id, scene.name, scene.settingsPage]));
+  if (signature === parametersSignature) return; parametersSignature = signature;
+  $('scene-parameters').replaceChildren(...scenes.map(scene => {
+    const panel = document.createElement('details'); panel.className = 'card extension-panel';
+    const summary = document.createElement('summary'); summary.textContent = scene.name + '设置';
+    const frame = document.createElement('iframe'); frame.className = 'scene-config-frame'; frame.title = scene.name + '设置'; frame.loading = 'lazy';
+    const url = new URL('/user/' + scene.settingsPage, location.origin); url.searchParams.set('streamuiScene', scene.id); frame.src = url.href;
+    panel.append(summary, frame); return panel;
+  }));
 }
 function activeScene(): SceneSlot | undefined { return client.state?.scenes.find(scene => scene.id === client.state!.scene.activeId); }
 function fitPreview(): void {
@@ -94,20 +80,18 @@ function setStatus(id: string, value: string, live: boolean): void { $(id).textC
 function sync(): void {
   const state = client.state;
   $('host-dot').dataset.live = String(client.connected); $('host-status').textContent = client.connected ? '已连接' : '正在重新连接';
-  $('add-scene').toggleAttribute('disabled', !client.connected);
   $('save-settings').toggleAttribute('disabled', !client.connected || !settings);
   select('scene-picker').disabled = !client.connected || !state?.scenes.length;
   for (const id of ['away-enabled', 'away-settings-enabled']) { input(id).disabled = !client.connected || !state?.scene.awaySceneId; input(id).checked = state?.scene.away ?? false; }
   $('away-status').textContent = !client.connected ? '未连接' : state?.scene.away ? '暂离中' : '已返回';
   if (!state) return;
   input('startup-enabled').checked = state.startup; $('output-url').textContent = state.outputUrl;
-  if (settings) { settings.scenes = state.scenes; settings.selectedSceneId = state.scene.selectedId; settings.away.enabled = state.scene.away; }
   const names: Record<string, string> = { connected: '已连接', disabled: '未启用', disconnected: '已停用', connecting: '连接中', reconnecting: '正在重新连接' };
   setStatus('obs-status', client.connected ? names[state.obs.state] ?? state.obs.state : '未连接', client.connected && state.obs.state === 'connected');
   setStatus('chat-status', client.connected ? names[state.chat.state] ?? state.chat.state : '未连接', client.connected && state.chat.state === 'connected');
   $('obs-current').textContent = state.obs.scene ?? '—'; $('chat-count').textContent = String(state.chat.events);
   for (const [id, error] of [['obs-error', state.obs.error], ['chat-error', state.chat.error]] as const) { $(id).hidden = !error; $(id).textContent = error ?? ''; }
-  sceneOptions(); preview(); drawPlugins();
+  sceneOptions(); preview(); drawSceneParameters(); drawPlugins();
 }
 async function loadSettings(fill = false): Promise<void> {
   settings = await request<CoreSettings>('/api/settings');
@@ -115,12 +99,11 @@ async function loadSettings(fill = false): Promise<void> {
     input('obs-enabled').checked = settings.obs.enabled; input('obs-url').value = settings.obs.url; input('obs-password').value = settings.obs.password;
     input('chat-enabled').checked = settings.laplace.enabled; input('chat-url').value = settings.laplace.url; input('chat-token').value = settings.laplace.token;
     input('chat-local').checked = settings.laplace.startLocalBridge;
-    select('away-scene').value = settings.away.sceneId ?? '';
   }
 }
 $('settings-form').addEventListener('input', event => {
   const target = event.target as HTMLElement; if (target.hasAttribute('data-immediate')) return;
-  if (target.closest('#scene-editor')) rememberDraft(); markDirty();
+  markDirty();
 });
 $('settings-form').onsubmit = async event => {
   event.preventDefault(); if (!settings) return;
@@ -129,33 +112,16 @@ $('settings-form').onsubmit = async event => {
     const next: CoreSettings = { ...settings,
       obs: { enabled: input('obs-enabled').checked, url: input('obs-url').value.trim(), password: input('obs-password').value },
       laplace: { enabled: input('chat-enabled').checked, url: input('chat-url').value.trim(), token: input('chat-token').value, startLocalBridge: input('chat-local').checked },
-      away: { enabled: client.state?.scene.away ?? false, sceneId: select('away-scene').value || null },
-      scenes: settings.scenes.map(scene => drafts.get(scene.id) ?? scene),
     };
-    client.state = await request('/api/settings', 'PUT', next); drafts.clear(); dirty = false;
-    await loadSettings(true); optionsSignature = ''; sync(); fillEditor();
+    client.state = await request('/api/settings', 'PUT', next);
+    await loadSettings(true); sync();
     $('save-status').textContent = '已保存，OBS 已同步'; toast('配置已保存并应用');
   } catch (error) { failure(error); }
   finally { button.disabled = false; }
 };
 select('scene-picker').onchange = () => void client.selectScene(select('scene-picker').value).catch(failure);
-select('scene-edit-id').onchange = () => { editingId = select('scene-edit-id').value; fillEditor(); };
 for (const id of ['away-enabled', 'away-settings-enabled']) input(id).onchange = async () => {
   try { client.state = await client.setAway(input(id).checked); sync(); } catch (error) { sync(); failure(error); }
-};
-$('add-scene').onclick = async () => {
-  try { const scene = await request<SceneSlot>('/api/scenes', 'POST', { name: '新场景' }); editingId = scene.id; await loadSettings(); optionsSignature = ''; sync(); select('scene-edit-id').value = editingId; fillEditor(); }
-  catch (error) { failure(error); }
-};
-$('remove-scene').onclick = async () => {
-  if (!settings || !editingId) return;
-  const scenes = settings.scenes.filter(scene => scene.id !== editingId);
-  try {
-    client.state = await request('/api/settings', 'PUT', { ...settings, scenes,
-      selectedSceneId: settings.selectedSceneId === editingId ? scenes[0]?.id ?? null : settings.selectedSceneId,
-      away: { ...settings.away, sceneId: settings.away.sceneId === editingId ? null : settings.away.sceneId } });
-    drafts.delete(editingId); editingId = scenes[0]?.id ?? ''; await loadSettings(); optionsSignature = ''; sync(); toast('场景已移除');
-  } catch (error) { failure(error); }
 };
 input('startup-enabled').onchange = async () => {
   try { await request('/api/startup', 'PUT', { enabled: input('startup-enabled').checked }); toast('已保存'); }

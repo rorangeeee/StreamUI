@@ -17,7 +17,7 @@ export interface PublicState {
 export interface CoreSettings {
   obs: { enabled: boolean; url: string; password: string };
   laplace: { enabled: boolean; url: string; token: string; startLocalBridge: boolean };
-  scenes: SceneSlot[]; selectedSceneId: string | null; away: { enabled: boolean; sceneId: string | null }; enabledPlugins: string[];
+  enabledPlugins: string[];
 }
 export interface ChatMessage {
   id: string | null; kind: 'message' | 'gift' | 'superchat'; platform: string; timestamp: number;

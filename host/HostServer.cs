@@ -71,32 +71,20 @@ public sealed class HostServer : IAsyncDisposable
         });
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
         app.MapGet("/api/state", () => Results.Json(State(), SettingsStore.Json));
-        app.MapGet("/api/settings", () => Results.Json(store.Current, SettingsStore.Json));
+        app.MapGet("/api/settings", () => Results.Json(new BroadcasterSettings(store.Current.Obs, store.Current.Laplace, store.Current.EnabledPlugins), SettingsStore.Json));
         app.MapGet("/api/storage", () => Results.Json(new { directory = content.Root, scenes = content.Scenes, plugins = content.Plugins }));
         app.MapPut("/api/settings", async (HttpRequest request) => {
-            var next = await request.ReadFromJsonAsync<HostSettings>(SettingsStore.Json) ?? throw new ArgumentException("配置为空。");
-            next.Validate();
+            var update = await request.ReadFromJsonAsync<BroadcasterSettings>(SettingsStore.Json) ?? throw new ArgumentException("配置为空。");
             await mutations.WaitAsync();
             try {
                 var previous = store.Current;
-                next = next with { SelectedSceneId = next.Scenes.Any(s => s.Id == previous.SelectedSceneId) ? previous.SelectedSceneId : next.SelectedSceneId,
-                    Away = next.Away with { Enabled = previous.Away.Enabled && next.Away.SceneId is not null } };
+                var next = previous with { Obs = update.Obs, Laplace = update.Laplace, EnabledPlugins = update.EnabledPlugins };
+                next.Validate();
                 await Save(next, "settings");
                 if (previous.Obs != next.Obs) obs.Configure(next.Obs);
                 if (previous.Laplace != next.Laplace) await chat.Configure(next.Laplace);
                 if (!previous.EnabledPlugins.SequenceEqual(next.EnabledPlugins)) await plugins.Reload(next.EnabledPlugins);
                 Broadcast(); return Results.Json(State(), SettingsStore.Json);
-            } finally { mutations.Release(); }
-        });
-        app.MapPost("/api/scenes", async (HttpRequest request) => {
-            var data = await request.ReadFromJsonAsync<NewSceneRequest>(SettingsStore.Json) ?? throw new ArgumentException("场景信息为空。");
-            var id = "scene-" + Guid.NewGuid().ToString("N")[..10];
-            var name = string.IsNullOrWhiteSpace(data.Name) ? "新场景" : data.Name.Trim();
-            var slot = new SceneSlot(id, name, $"scenes/{id}/index.html");
-            await mutations.WaitAsync();
-            try {
-                var next = store.Current with { Scenes = [.. store.Current.Scenes, slot], SelectedSceneId = store.Current.SelectedSceneId ?? id };
-                next.Validate(); content.CreateScene(id, name); await Save(next, "scene-created"); return Results.Json(slot, SettingsStore.Json);
             } finally { mutations.Release(); }
         });
         app.MapGet("/api/scenes/{id}/settings", (string id) => {
@@ -138,7 +126,7 @@ public sealed class HostServer : IAsyncDisposable
             WindowsStartup.Set(data.Enabled); Broadcast(); return Results.Ok();
         });
         app.MapPost("/api/open/{page}", (string page) => {
-            var target = page switch { "obs" => ObsUrl, "config" => ConfigUrl, "data" => content.Root, "scenes" => content.Scenes, "plugins" => content.Plugins, _ => null };
+            var target = page switch { "obs" => ObsUrl, "config" => ConfigUrl, "data" => content.Root, "plugins" => content.Plugins, _ => null };
             if (target is null) return Results.NotFound(); Program.Open(target); return Results.Ok();
         });
         app.MapPost("/api/shutdown", (HttpResponse response) => { response.OnCompleted(() => { ShutdownRequested?.Invoke(); return Task.CompletedTask; }); return Results.Accepted(); });
@@ -183,7 +171,6 @@ public sealed class HostServer : IAsyncDisposable
         await obs.DisposeAsync(); await chat.DisposeAsync(); await plugins.DisposeAsync();
         await app.StopAsync(TimeSpan.FromSeconds(5)); await app.DisposeAsync(); mutations.Dispose();
     }
-    private record NewSceneRequest(string Name);
     private record SelectSceneRequest(string Id);
     private record AwayRequest(bool? Enabled);
     private record StartupRequest(bool Enabled);
