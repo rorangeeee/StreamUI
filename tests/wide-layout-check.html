@@ -4,7 +4,7 @@
 *{box-sizing:border-box}html{color-scheme:dark}body{margin:0;background:#111;color:#eee;font:14px system-ui}header{padding:16px;display:flex;gap:12px;align-items:center}button{padding:9px 15px;background:#292929;color:#fff;border:1px solid #555;cursor:pointer}#surface{position:relative;width:100%;aspect-ratio:16/9;overflow:hidden;background:linear-gradient(125deg,#edf2f0 0%,#d2b899 28%,#4c6b7b 48%,#1e2732 66%,#070b13 100%)}#surface:before{content:'TEST VIDEO BACKGROUND · 明暗对比测试';position:absolute;left:15%;top:40%;font:700 5vw system-ui;color:#fff5;max-width:65%;line-height:1.4}iframe{position:absolute;inset:0;width:100%;height:100%;border:0}pre{white-space:pre-wrap;padding:20px;margin:0;font-size:13px}body[data-preview=true] header,body[data-preview=true] pre{display:none}
 </style>
 <header><button id="run">运行布局检查</button><button id="chat">显示测试弹幕</button><button id="gift">显示测试礼物</button><button id="history">显示终端历史</button><button id="preview">仅显示预览</button><span>隔离测试 · 背景模拟 OBS 下层视频</span></header>
-<div id="surface"><iframe id="stage" src="/display.html"></iframe></div><pre id="results">等待运行</pre>
+<div id="surface"><iframe id="stage" src="/?edit=1"></iframe></div><pre id="results">等待运行</pre>
 <script type="module">
 const iframe=document.querySelector('#stage'), output=document.querySelector('#results');
 const doc=()=>iframe.contentDocument, win=()=>iframe.contentWindow;
@@ -65,12 +65,26 @@ receive('message',{message:'<img src=x onerror=alert(1)> 仅作为文字显示'}
 for(let i=0;i<25;i++)receive('message',{message:`滚动检查 ${i}：长消息自动折行，旧消息继续保留。`});settleHistory();
 const viewport=terminal.querySelector('.history-viewport');check(viewport.scrollHeight>viewport.clientHeight&&Math.abs(viewport.scrollHeight-viewport.clientHeight-viewport.scrollTop)<2,'the long terminal scrolls to the newest completed message');
 viewport.scrollTop=0;receive('message',{message:'查看历史时不抢走滚动位置'});settleHistory();check(viewport.scrollTop===0,'reading older messages is not interrupted by new arrivals');
+viewport.scrollTop=viewport.scrollHeight;await delay(50);receive('message',{message:'回到列表底部后继续跟随最新弹幕'});settleHistory();
+const atTail=()=>Math.abs(viewport.scrollHeight-viewport.clientHeight-viewport.scrollTop)<2;
+check(atTail(),'scrolling back to the bottom resumes following new messages');
+terminal.style.fontSize='44px';await delay(100);check(atTail(),'font reflow keeps the newest message visible even without new arrivals');
+terminal.style.fontSize='';await delay(100);
+lift.style.height='65%';await delay(100);check(atTail(),'shrinking the terminal keeps it at the newest message');
+lift.style.height='';await delay(100);
+lift.style.width='72%';await delay(100);check(atTail(),'wrapping after a width change keeps the newest message visible');
+lift.style.width='';await delay(100);
+for(let i=0;i<220;i++)receive('message',{message:`历史容量回归检查 ${i}`});settleHistory();
+check(terminal.querySelectorAll('.history-entry').length===200&&atTail(),'trimming the history to 200 rows continues following the newest message');
 track.update({title:'夜行 LATENITE',artist:'When',playing:true,state:'playing'});
 await mode('21:9');check(doc().querySelector('now-playing')===track&&track.parentElement.id==='spectrogram-window','returning to 21:9 restores the same track component');
 check(style(doc().querySelector('stream-metadata')).display!=='none','21:9 information terminal is restored');
 check(style(single).display==='block'&&style(terminal).display==='none'&&single.textContent===originalSingle,'21:9 single-message contents and appearance survive the 16:9 terminal session');
-terminal.receive({type:'message',id:`wide-qa-${++sequence}`,origin:'local-wide-check',username:'布局切换',message:'21:9 期间收到的历史',timestamp:Date.now()});
-await mode('16:9');check(terminal.textContent.includes('21:9 期间收到的历史'),'returning to 16:9 preserves the log and includes intervening messages');historyFixture();track.update({title:'夜行 LATENITE',artist:'When',playing:true,state:'playing'});
+for(let i=0;i<12;i++)terminal.receive({type:'message',id:`wide-qa-${++sequence}`,origin:'local-wide-check',username:'布局切换',message:`21:9 期间收到的历史 ${i}`,timestamp:Date.now()});
+await mode('16:9');check(terminal.textContent.includes('21:9 期间收到的历史 11'),'returning to 16:9 preserves the log and includes intervening messages');
+check(atTail(),'returning from 21:9 follows the accumulated messages after the panel regains its 16:9 size');
+receive('message',{message:'布局切回后新弹幕继续自动滚动'});settleHistory();check(atTail(),'new messages continue following after a layout round trip');
+historyFixture();track.update({title:'夜行 LATENITE',artist:'When',playing:true,state:'playing'});
 output.textContent=passed.join('\n')+'\n'+passed.length+' checks passed';
 }catch(error){output.textContent=passed.join('\n')+'\nFAIL '+error.message}
 };

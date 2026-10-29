@@ -19,7 +19,25 @@ export class ChatHistoryTerminal extends HTMLElement {
   private subscribed = false;
   private animation = 0;
   private previousTime = 0;
+  private followTail = true;
+  private scrollPosition: { top: number; height: number; viewport: number } | null = null;
+  private resizeObserver: ResizeObserver | null = null;
   private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  private onScroll = () => {
+    if (!this.active || !this.viewport.clientHeight) return;
+    const { scrollTop: top, scrollHeight: height, clientHeight: viewport } = this.viewport;
+    const previous = this.scrollPosition;
+    // A reflow can move the bottom without the viewer scrolling away from it.
+    if (previous && height === previous.height && viewport === previous.viewport && Math.abs(top - previous.top) > 1) {
+      this.followTail = height - viewport - top < 32;
+    }
+    this.scrollPosition = { top, height, viewport };
+  };
+  private followLatest = () => {
+    if (!this.active || !this.isConnected || document.hidden || !this.viewport.clientHeight) return;
+    if (this.followTail) this.viewport.scrollTop = this.viewport.scrollHeight;
+    this.scrollPosition = { top: this.viewport.scrollTop, height: this.viewport.scrollHeight, viewport: this.viewport.clientHeight };
+  };
   private onChat = (event: Event) => this.receive((event as CustomEvent).detail);
   private onState = () => {
     const connected = host.connected && host.state?.laplace.state === 'connected';
@@ -56,17 +74,24 @@ export class ChatHistoryTerminal extends HTMLElement {
     this.setAttribute('aria-hidden', String(!this.active));
     window.addEventListener('pagehide', this.hide); window.addEventListener('pageshow', this.show);
     document.addEventListener('visibilitychange', this.sync); this.reducedMotion.addEventListener('change', this.sync);
+    this.viewport.addEventListener('scroll', this.onScroll, { passive: true });
+    this.resizeObserver = new ResizeObserver(this.followLatest);
+    this.resizeObserver.observe(this.viewport); this.resizeObserver.observe(this.output);
     this.connectBridge(); this.sync();
   }
 
   disconnectedCallback(): void {
     window.removeEventListener('pagehide', this.hide); window.removeEventListener('pageshow', this.show);
     document.removeEventListener('visibilitychange', this.sync); this.reducedMotion.removeEventListener('change', this.sync);
+    this.viewport.removeEventListener('scroll', this.onScroll);
+    this.resizeObserver?.disconnect(); this.resizeObserver = null;
     this.disconnectBridge(); this.pause();
   }
 
   setActive(active: boolean): void {
     if (this.active === active) return;
+    // A hidden log may have accumulated messages, and the new panel size is applied after this call.
+    if (active) { this.followTail = true; this.scrollPosition = null; }
     this.active = active; this.setAttribute('aria-hidden', String(!active)); this.sync();
   }
 
@@ -99,14 +124,14 @@ export class ChatHistoryTerminal extends HTMLElement {
 
   private render(): void {
     if (!this.output) return;
+    this.onScroll();
     const frames = this.playback.read(), ids = new Set(frames.map(frame => frame.id));
-    const followTail = this.viewport.scrollHeight - this.viewport.clientHeight - this.viewport.scrollTop < 32;
     const previousHeight = this.viewport.scrollHeight, previousTop = this.viewport.scrollTop;
     let removed = false;
     for (const [id, row] of this.rows) {
       if (!ids.has(id)) { row.article.remove(); this.rows.delete(id); removed = true; }
     }
-    if (removed && !followTail) this.viewport.scrollTop = Math.max(0, previousTop - (previousHeight - this.viewport.scrollHeight));
+    if (removed && !this.followTail) this.viewport.scrollTop = Math.max(0, previousTop - (previousHeight - this.viewport.scrollHeight));
     for (const frame of frames) {
       let row = this.rows.get(frame.id);
       if (!row) {
@@ -130,7 +155,7 @@ export class ChatHistoryTerminal extends HTMLElement {
     }
     const last = frames.at(-1), article = last && this.rows.get(last.id)?.article;
     (article?.lastElementChild ?? this.output).append(this.cursor);
-    if (followTail) this.viewport.scrollTop = this.viewport.scrollHeight;
+    this.followLatest();
   }
 }
 
